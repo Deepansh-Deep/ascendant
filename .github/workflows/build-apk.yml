@@ -20,7 +20,11 @@ jobs:
           distribution: temurin
           java-version: 21
 
+      # GitHub's Ubuntu runners ship the Android SDK; only make sure platform 36 and build tools are present.
+      # (The default "tools" package no longer exists and made setup-android fail.)
       - uses: android-actions/setup-android@v3
+        with:
+          packages: 'platform-tools platforms;android-36 build-tools;36.0.0'
 
       - name: Install and sync
         run: |
