@@ -13,10 +13,14 @@ const MORPHS = ['muscle_up', 'muscle_down', 'build_heavy', 'build_slim', 'chest'
   'face_square', 'face_oval', 'face_round', 'face_angular', 'jaw_strong', 'nose_broad', 'nose_narrow', 'breathe'];
 
 // rest pose of the base mesh is an A-pose; these are offsets (degrees, XYZ) per bone
+// fingers have their own bones; curling them (local X) makes hands read as hands, not flat paddles
+const FINGERS = s => ['index', 'middle', 'ring', 'pinky'].flatMap(f => [1, 2, 3].map(i => `${f}_0${i}_${s}`));
+const curl = (pose, side, deg, thumb) => { FINGERS(side).forEach(b => { pose[b] = [deg, 0, 0]; }); if (thumb) { pose['thumb_01_' + side] = [0, 0, side === 'l' ? thumb : -thumb]; pose['thumb_02_' + side] = [thumb, 0, 0]; } return pose; };
 const POSES = {
-  relaxed: { upperarm_l: [5, 0, -42], upperarm_r: [5, 0, 42], lowerarm_l: [0, 12, -12], lowerarm_r: [0, -12, 12], hand_l: [0, 0, 4], hand_r: [0, 0, -4], spine_03: [-2, 0, 0], head: [2, 0, 0] },
-  flex: { upperarm_l: [0, 0, 32], upperarm_r: [0, 0, -32], lowerarm_l: [0, -40, 95], lowerarm_r: [0, 40, -95], hand_l: [0, 0, 20], hand_r: [0, 0, -20], spine_03: [-6, 0, 0], head: [-4, 0, 0] },
-  victory: { upperarm_l: [0, 0, 62], upperarm_r: [6, 0, 44], lowerarm_l: [0, -10, 25], lowerarm_r: [0, -12, 12], hand_l: [0, 0, 0], hand_r: [0, 0, -4], spine_03: [-6, 0, 0], head: [-10, 0, 0] },
+  relaxed: curl(curl({ upperarm_l: [5, 0, -42], upperarm_r: [5, 0, 42], lowerarm_l: [0, 12, -12], lowerarm_r: [0, -12, 12], hand_l: [0, 0, 4], hand_r: [0, 0, -4], spine_03: [-2, 0, 0], head: [2, 0, 0] }, 'l', 28), 'r', 28),
+  // double-biceps: upper arms out near horizontal, forearms vertical, closed fists
+  flex: curl(curl({ upperarm_l: [0, 0, 38], upperarm_r: [0, 0, -38], lowerarm_l: [-90, 0, 0], lowerarm_r: [-90, 0, 0], spine_03: [-6, 0, 0], head: [-4, 0, 0] }, 'l', 85, 30), 'r', 85, 30),
+  victory: curl(curl({ upperarm_l: [0, 0, 62], upperarm_r: [6, 0, 44], lowerarm_l: [0, -10, 25], lowerarm_r: [0, -12, 12], hand_l: [0, 0, 0], hand_r: [0, 0, -4], spine_03: [-6, 0, 0], head: [-10, 0, 0] }, 'l', 85, 30), 'r', 28),
 };
 
 const VIEWS = { front: { yaw: 0, zoom: 0 }, three: { yaw: -0.62, zoom: 0 }, side: { yaw: -Math.PI / 2, zoom: 0 }, back: { yaw: Math.PI, zoom: 0 }, face: { yaw: -0.25, zoom: 1 } };
@@ -174,7 +178,7 @@ class HunterEngine {
     return mat;
   }
   _hairMat() {
-    return new THREE.MeshPhysicalMaterial({ color: 0x1a1412, map: this.tex.hairS, normalMap: this.tex.hairN, normalScale: new THREE.Vector2(0.6, 0.6), roughness: 0.48, sheen: 0.8, sheenRoughness: 0.35, sheenColor: new THREE.Color(0x8a7060), side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -3, polygonOffsetUnits: -3 });
+    return new THREE.MeshPhysicalMaterial({ color: 0x1a1412, map: this.tex.hairS, normalMap: this.tex.hairN, normalScale: new THREE.Vector2(0.6, 0.6), roughness: 0.56, sheen: 0.3, sheenRoughness: 0.45, sheenColor: new THREE.Color(0x4a3c34), envMapIntensity: 0.55, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -3, polygonOffsetUnits: -3 });
   }
 
   // --------------------------------------------------------------- public API
@@ -395,6 +399,7 @@ class HunterEngine {
 }
 
 const engine = new HunterEngine();
+engine._poses = POSES; // dev harness hook (dev/viewer.html)
 window.Hunter3D = engine;
 window.dispatchEvent(new CustomEvent('hunter3d-ready'));
 export default engine;

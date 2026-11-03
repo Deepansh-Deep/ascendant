@@ -516,12 +516,39 @@ def build(g):
     for vs, _ in BODY_FACES:
         for i in range(len(vs)): NBR[vs[i]].add(vs[(i + 1) % len(vs)]); NBR[vs[(i + 1) % len(vs)]].add(vs[i])
     def region_smooth(V, region, iters):
-        V = V.copy(); idx = np.where(region)[0]; nbl = [np.array(sorted(NBR[i])) for i in idx]
+        V = V.copy(); idx = np.where(region)[0]
+        rows = np.array([r for r, i in enumerate(idx) for _ in NBR[i]]); cols = np.array([n_ for i in idx for n_ in NBR[i]])
+        deg = np.bincount(rows, minlength=len(idx))[:, None].astype(float)
         for _ in range(iters):
-            V[idx] = V[idx] * 0.4 + 0.6 * np.array([V[n].mean(0) for n in nbl])
+            acc = np.zeros((len(idx), 3)); np.add.at(acc, rows, V[cols])
+            V[idx] = V[idx] * 0.4 + 0.6 * acc / deg
         return V
     chest_zone = inbody & (torso > 0.4) & (Y < shoulderY - 0.15) & (Y > shoulderY - 0.62 * (shoulderY - hipY) - 0.2) & (Z > 0.0) & (np.abs(X) < 1.25)
-    garment_base = region_smooth(Vb, chest_zone, 120 if is_f else 6)
+    CHEST_IT = 6
+    from scipy.spatial import cKDTree
+    body_idx = np.where(inbody)[0]
+    def drape(V0, region, iters):
+        # Fabric over the chest. Female: smooth by PHYSICAL distance (gaussian, ~1.5 cm), not by mesh steps,
+        # because the nipple area of the base mesh is a dense cluster of tiny triangles that step-based
+        # smoothing barely touches. Removes small details, keeps the overall chest shape.
+        if not is_f: return region_smooth(V0, region, iters)
+        V = V0.copy(); idx = np.where(region)[0]; r = 0.16
+        for _ in range(2):
+            src = V[body_idx]; tree = cKDTree(src)
+            out = np.empty((len(idx), 3))
+            for q, nbr in enumerate(tree.query_ball_point(V[idx], r * 1.8)):
+                d2 = np.sum((src[nbr] - V[idx[q]]) ** 2, 1); w = np.exp(-d2 / (2 * (r * 0.6) ** 2))
+                out[q] = (src[nbr] * w[:, None]).sum(0) / w.sum()
+            # blend toward the original at the zone edge so there is no step where smoothing stops
+            edge = smoothstep(0.4, 0.75, torso[idx])[:, None] if 'torso' in dir() else 1.0
+            V[idx] = V[idx] * (1 - edge) + out * edge
+        return V
+    garment_base = drape(Vb, chest_zone, CHEST_IT)
+    # tops also need smoothed shading normals and smoothed morph deltas; otherwise chest detail
+    # (e.g. nipples) shows through the fabric in lighting and returns as the body evolves
+    nb_top = vertex_normals_fast(garment_base, BODY_TRI)
+    md_top = {k: (drape(Vb + md[k], chest_zone, CHEST_IT) - garment_base) if np.abs(md[k][chest_zone]).max() > 1e-6 else md[k] for k in MORPH_ORDER}
+    mn_top = {k: vertex_normals_fast(garment_base + md_top[k], BODY_TRI) - nb_top for k in MORPH_ORDER}
     shoe_base = region_smooth(Vb, inbody & (Y < ankleY + 0.5), 140)
     def emit(name, field, off, vol, mat, extra=None, smooth=0):
         verts, tri = clip_shell(field)
@@ -529,7 +556,8 @@ def build(g):
         A = np.array([v[0] for v in verts]); Bv = np.array([v[1] for v in verts]); t = np.array([v[2] for v in verts])[:, None]
         uv = np.array([v[3] for v in verts]); uv[:, 1] = 1 - uv[:, 1]
         lerp = lambda arr: arr[A] * (1 - t) + arr[Bv] * t
-        n = lerp(nb); n /= np.linalg.norm(n, axis=1, keepdims=True)
+        is_top = name.startswith('top')
+        n = lerp(nb_top if is_top else nb); n /= np.linalg.norm(n, axis=1, keepdims=True)
         fval = lerp(field[:, None])[:, 0]
         o = off + (lerp(vol[:, None])[:, 0] if vol is not None else np.zeros(len(verts)))
         if mat == 'hair': o = o * smoothstep(0.0, 0.12, fval)  # soft hairline
@@ -594,7 +622,7 @@ def build(g):
                     if ww > 0: acc[int(jj)] = acc.get(int(jj), 0) + ww * wgt
             top4 = sorted(acc.items(), key=lambda x: -x[1])[:4]; ssum = sum(x for _, x in top4) or 1
             for q, (jj, ww) in enumerate(top4): Jc[i, q] = jj; Wc[i, q] = ww / ssum
-        Pl, UVl, Tl, Nl, Jl, Wl, MDl, MNl = [P], [uv], [tri], [n], [Jc], [Wc], [{k: lerp(md[k]) for k in MORPH_ORDER}], [{k: lerp(mn[k]) for k in MORPH_ORDER}]
+        Pl, UVl, Tl, Nl, Jl, Wl, MDl, MNl = [P], [uv], [tri], [n], [Jc], [Wc], [{k: lerp((md_top if is_top else md)[k]) for k in MORPH_ORDER}], [{k: lerp((mn_top if is_top else mn)[k]) for k in MORPH_ORDER}]
         if extra:
             for (gp, guv, gtri, gn) in extra:
                 base_i = sum(len(x) for x in Pl)
