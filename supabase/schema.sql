@@ -380,6 +380,15 @@ begin
     'now', now());
 end $$;
 
+create or replace function public.reset_my_training()
+returns void language plpgsql security definer set search_path = public as $$
+declare uid uuid := (public._me()).id;
+begin
+  delete from public.user_logs where user_id = uid;
+  delete from public.user_state where user_id = uid;
+  delete from public.user_scores where user_id = uid;
+end $$;
+
 -- ---------------------------------------------------------------- leaderboards
 create or replace function public.guild_leaderboard(p_category text, p_period text, p_guild uuid default null)
 returns table (rank int, user_id uuid, username text, display_name text, score int, is_me boolean, member_count int)
@@ -602,7 +611,7 @@ grant execute on function
   public.become_guild_master(text, text, text), public.master_update_guild(text, text), public.master_regen_join_code(),
   public.master_requests(), public.master_members(), public.master_decide(uuid, boolean), public.master_remove(uuid),
   public.request_join(text), public.leave_guild(),
-  public.sync_push(jsonb, jsonb), public.sync_pull(timestamptz),
+  public.sync_push(jsonb, jsonb), public.sync_pull(timestamptz), public.reset_my_training(),
   public.guild_leaderboard(text, text, uuid), public.my_competition_history(),
   public.owner_create_codes(int, text, int, int), public.owner_codes(), public.owner_revoke_code(text), public.owner_guilds(),
   public.owner_set_guild(uuid, date, text), public.owner_users(text), public.owner_stats(), public.am_owner(),

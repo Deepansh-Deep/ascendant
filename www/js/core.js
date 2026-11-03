@@ -1,6 +1,6 @@
 "use strict";
 /* ===== CONSTANTS ===== */
-const VERSION = "2.0.0";
+const VERSION = "2.1.0";
 const MUSCLES = ["Chest","Back","Shoulders","Biceps","Triceps","Legs","Abs","Cardio"];
 const OPTIONS = {
   Chest:["Bench Press","Incline Dumbbell Press","Chest Press Machine","Pec Deck Fly","Cable Crossover","Push-ups"],
@@ -58,11 +58,16 @@ function migrate(s){
   if (s.pro && s.theme && s.theme!=="iron" && !s.owned.includes("theme:"+s.theme)) s.owned.push("theme:"+s.theme);
   return s;
 }
+let STORE_KEY = KEY;      // per account when signed in (see cloud.js)
+let afterSave = null;     // set by cloud.js to schedule a background sync
 function save(){
-  try { localStorage.setItem(KEY, JSON.stringify(S)); return true; }
+  if (!S) return false;
+  try { localStorage.setItem(STORE_KEY, JSON.stringify(S)); }
   catch(e){ toast("Storage is full. Remove some progress photos."); return false; }
+  if (afterSave) afterSave();
+  return true;
 }
-function load(){ try { const s = localStorage.getItem(KEY); if (s) return migrate(JSON.parse(s)); } catch(e){} return null; }
+function load(){ try { const s = localStorage.getItem(STORE_KEY); if (s) return migrate(JSON.parse(s)); } catch(e){} return null; }
 
 function planOn(k){ let p = S.planHistory[0].plan; for (const h of S.planHistory) if (h.from <= k) p = h.plan; return p; }
 const musclesOn = k => planOn(k)[wd(fromKey(k))] || [];

@@ -10,7 +10,7 @@ const TABS = [["home","Home","home"],["train","Train","lift"],["hunter","Hunter"
 const VIEW_BTNS = [["front","Front"],["three","Angle"],["side","Side"],["back","Back"],["face","Face"]];
 const segs = (opts, cur, act) => `<div class="seg" role="tablist">${opts.map(([k, l]) => `<button role="tab" aria-selected="${cur === k}" class="${cur === k ? "on" : ""}" data-act="${act}" data-v="${k}">${l}</button>`).join("")}</div>`;
 const secH = (title, right = "") => `<div class="sec-h"><h2>${title}</h2>${right}</div>`;
-const curLook = () => UI.onb ? UI.onb.look : Object.assign({}, S.look, UI.preview || {});
+const curLook = () => UI.onb ? UI.onb.look : S ? Object.assign({}, S.look, UI.preview || {}) : Object.assign({}, BASE_LOOK);
 const logKey = () => UI.editKey || TODAY();
 
 /* ---------------- render ---------------- */
@@ -18,16 +18,17 @@ function render(){
   const root = document.documentElement;
   const pt = UI.previewItem && CAT[UI.previewItem] && CAT[UI.previewItem].slot === "theme" ? CAT[UI.previewItem].key : null;
   root.dataset.theme = pt || (S && S.theme) || "gold";
+  if (UI.auth){ renderAuth(); $("#nav").innerHTML = ""; $("#pbar").innerHTML = ""; return; }
   if (!S || UI.onb){ renderOnboarding(); $("#nav").innerHTML = ""; return; }
   const C = compute();
   const V = {home:viewHome, train:viewTrain, hunter:viewHunter, progress:viewProgress, guild:viewGuild, settings:viewSettings}[UI.tab] || viewHome;
-  $("#app").innerHTML = (S.demo ? `<div class="demo-bar"><span>Demo data. These workouts are generated examples, not your training.</span><button data-act="reset">Start my own</button></div>` : "") + V(C);
+  $("#app").innerHTML = updateBar() + (S.demo ? `<div class="demo-bar"><span>Demo data. These workouts are generated examples, not your training.</span><button data-act="reset">${CLOUD_ON ? "Leave demo" : "Start my own"}</button></div>` : "") + V(C);
   $("#nav").innerHTML = `<div class="nav-in">${TABS.map(([k, l, i]) => `<button class="${UI.tab === k ? "on" : ""}" data-act="tab" data-v="${k}" ${UI.tab === k ? 'aria-current="page"' : ""}>${ICON[i]}<span>${l}</span></button>`).join("")}</div>`;
   $("#pbar").innerHTML = UI.tab === "hunter" ? previewBar(C) : "";
   mountStage();
   if (!UI.achInit){ UI.achInit = true; C.ach.forEach(id => { if (!S.achieved[id]) S.achieved[id] = TODAY(); }); save(); }
   else checkAchievements(C);
-  if (UI.tab === "guild") guildAutoload(C);
+  if (UI.tab === "guild") guildLoad();
 }
 
 /* stage bridge (works in onboarding too) */
@@ -45,7 +46,7 @@ async function mountStage(){
     const L = curLook();
     await api.setLook(L);
     if (!el.isConnected) return;
-    if (S && !UI.onb){ const C = compute(); api.setBody({level: C.level, stages: C.body.stages});
+    if (S && !UI.onb && !UI.auth){ const C = compute(); api.setBody({level: C.level, stages: C.body.stages});
       const a = CAT["aura:" + L.aura]; api.setAura(a && a.hex, a && a.key !== "none" ? Math.max(0.4, C.aura) : 0); }
     else { api.setBody({level:1, stages:{}}); api.setAura(null, 0); }
     api.setPose(L.pose || "relaxed");
@@ -126,13 +127,16 @@ function chRow(c){
     ${c.prog !== undefined && !c.done ? `<i class="ch-bar"><i style="width:${Math.round(c.prog * 100)}%"></i></i>` : ""}</div><span class="ch-xp num">+${c.xp}</span></div>`;
 }
 function guildHomeCard(C){
-  const g = S.guild || {}, sc = guildScores(C, "week");
-  if (g.guildId && g.lastRank) return `<section class="card guild-card"><div class="row between"><div><div class="k">${esc(g.guildName)}</div><h3>Rank <span class="num">#${g.lastRank.rank}</span> of ${g.lastRank.of}</h3>
-    <div class="tiny mute">Overall, this week. Updated ${new Date(g.lastRank.at).toLocaleString("en-IN", {hour:"2-digit", minute:"2-digit", day:"numeric", month:"short"})}</div></div>
-    <button class="btn sm ghost" data-act="tab" data-v="guild">Leaderboard</button></div></section>`;
-  return `<section class="card guild-card"><div class="row between"><div><div class="k">Gym ranking</div><h3>${g.guildId ? "Not synced yet" : "Not in a guild"}</h3>
-    <div class="tiny mute">Your weekly guild score on this phone: <b class="num">${sc.overall}</b> / 100</div></div>
-    <button class="btn sm ghost" data-act="tab" data-v="guild">${g.guildId ? "Open" : "How it works"}</button></div></section>`;
+  const a = acct(), m = a && a.membership, mg = a && a.master_guild, last = S.guildSeen && S.guildSeen["overall:week"];
+  const card = (k, h, sub, btn) => `<section class="card guild-card"><div class="row between gap"><div class="grow"><div class="k">${k}</div><h3>${h}</h3><div class="tiny mute">${sub}</div></div>
+    <button class="btn sm ghost" data-act="tab" data-v="guild">${btn}</button></div></section>`;
+  if (!CLOUD_ON || S.demo) return card("Gym ranking", "Offline mode", "Guild rankings need an Ascendant account.", "Details");
+  if (role() === "owner") return card("Owner", "Ascendant admin", "Guilds, codes, users and subscriptions.", "Open admin");
+  if (mg) return card("Your gym", esc(mg.name), `${mg.members} member${mg.members === 1 ? "" : "s"}${mg.pending ? `, <b>${mg.pending} waiting for approval</b>` : ""}${mg.active ? "" : ", subscription expired"}`, "Manage");
+  if (m && m.status === "pending") return card("Gym ranking", "Waiting for approval", `Your request to join ${esc(m.guild_name)} is with the guild master.`, "Open");
+  if (m && last) return card(esc(m.guild_name), `Rank <span class="num">#${last.rank}</span> of ${last.of}`, "Overall, this week", "Leaderboard");
+  if (m) return card(esc(m.guild_name), "Leaderboard", "See where you stand this week.", "Open");
+  return card("Gym ranking", "Not in a guild", "Join your gym's guild with the code from your gym.", "Join");
 }
 
 /* ---------------- TRAIN ---------------- */
@@ -319,7 +323,7 @@ function lookPatch(it, L){
   return {[it.slot]: it.key};
 }
 function previewBar(C){
-  if (UI.previewKind === "identity") return `<div class="pbar"><div class="grow"><b>Body or face change</b><span class="tiny mute">${S.pass ? "Free with your Pass" : `Costs ${REDESIGN_COST} crystals. You have ${C.crystals}.`}</span></div>
+  if (UI.previewKind === "identity") return `<div class="pbar"><div class="grow"><b>Body or face change</b><span class="tiny mute">${hasPass() ? "Free with your Pass" : `Costs ${REDESIGN_COST} crystals. You have ${C.crystals}.`}</span></div>
     <button class="btn sm quiet" data-act="cancel-preview">Discard</button><button class="btn sm" data-act="save-identity">Save</button></div>`;
   const it = UI.previewItem && CAT[UI.previewItem]; if (!it) return "";
   const earnOnly = !!it.earn;
@@ -338,18 +342,17 @@ function panelEvo(C){
     <p class="tiny mute">Each region grows from the hard sets you log for it. At most 20 sets per region per week count, so extra junk volume never speeds it up and recovery stays part of the plan. This is a game picture of your training effort, not a prediction of how your real body will change.</p></section>`;
 }
 function panelShop(C){
-  const pk = PACKS[0], pkOwned = pk.items.every(id => S.owned.includes(id)) || S.pass;
+  const pk = PACKS[0], pkOwned = pk.items.every(id => S.owned.includes(id)) || hasPass();
   const forSale = r => CATALOG.filter(it => it.rarity === r && !it.earn && it.cost && !owns(it.id, C.level));
   return `<section class="card balance"><div><div class="k">Crystals</div><div class="big num">${C.crystals}</div></div>
     <div class="tiny mute">Earned free: 5 per rank, 2 per full week, 3 per skill, 1 to 10 per badge.</div></section>
-  <section class="card pass"><div class="row between"><div><div class="k">Ascendant Pass</div><h3>${S.pass ? "Active" : `${PASS_PRICE}, one time`}</h3></div>${S.pass ? '<span class="pill good">Owned</span>' : `<button class="btn sm" data-act="pass">Details</button>`}</div>
+  <section class="card pass"><div class="row between"><div><div class="k">Ascendant Pass</div><h3>${hasPass() ? "Active" : "One-time unlock"}</h3></div>${hasPass() ? '<span class="pill good">Owned</span>' : `<button class="btn sm" data-act="pass">Details</button>`}</div>
     <p class="tiny mute">Every crystal-priced item and free redesigns. Legendary items stay earned only, and nothing you buy affects rankings.</p></section>
   <section class="card"><div class="row between"><div><h3>${pk.name}</h3><div class="tiny mute">${pk.desc}</div></div>${pkOwned ? '<span class="pill good">Owned</span>' : `<button class="btn sm" data-act="buy-pack">${pk.cost} ${CRY}</button>`}</div></section>
   ${["epic", "rare"].map(r => { const list = forSale(r); return list.length ? `<div class="sub-h">${RARITY[r].n} items</div><div class="tiles">${list.map(it => tile(it, C, curLook(), false)).join("")}</div>` : ""; }).join("")}
   <div class="sub-h">Legendary, earned only</div><div class="tiles">${CATALOG.filter(it => it.rarity === "legendary").map(it => tile(it, C, curLook(), false)).join("")}</div>
   <div class="sub-h">Themes</div><div class="tiles">${CATALOG.filter(it => it.slot === "theme").map(it => tile(it, C, curLook(), false)).join("")}</div>
-  <section class="card"><h3>Get crystals</h3><div class="grid3">${CRYSTAL_PACKS.map(([p, lbl, n]) => `<button class="pack" data-act="buy-crystals" data-v="${n}"><b class="num">${n}</b><span>${lbl}</span></button>`).join("")}</div>
-    <p class="tiny warn">Payments are not connected in this build. These buttons add crystals for testing and charge nothing. A store release needs Google Play Billing, which is not implemented yet.</p></section>`;
+  ${crystalShop()}`;
 }
 function panelBadges(C){
   return `<p class="sm mute">${C.ach.length} of ${ACH.length} earned. Badges are checked against your logs, so they cannot be bought.</p>
@@ -407,73 +410,11 @@ function photosBlock(){
     <button class="btn ghost" data-act="add-photo">${ICON.camera}Add photo</button>`;
 }
 
-/* ---------------- GUILD ---------------- */
-const CATS = [["overall", "Overall"], ["consistency", "Consistency"], ["strength", "Strength"], ["progress", "Progress"]];
-const PERIODS = [["week", "Weekly"], ["month", "Monthly"], ["all", "All time"]];
-function scoreExplain(sc){
-  const d = sc.detail;
-  return [["consistency", "Consistency", sc.consistency, `${d.done} of ${d.planned} planned days trained (up to 6 per week count)`],
-    ["strength", "Strength", sc.strength, d.lifts ? `Top ${d.lifts} lift${d.lifts > 1 ? "s" : ""}: estimated 1RM averages ${d.rel}× bodyweight (1.5× = 100), or skill-tree mastery if higher` : "Skill-tree mastery (no weighted lifts in this period)"],
-    ["progress", "Progress", sc.progress, `Average estimated-1RM gain ${d.gainPct}% vs your previous 4 weeks (capped), plus ${d.skillsIn} skill unlock${d.skillsIn === 1 ? "" : "s"}`],
-    ["overall", "Overall", sc.overall, "40% consistency + 30% progress + 30% strength"]];
-}
-function viewGuild(C){
-  const g = S.guild || {}, cat = UI.gcat || "overall", per = UI.gper || "week", sc = guildScores(C, per);
-  const local = `<section class="card"><div class="sec-h"><h3>Your guild scores</h3><span class="tiny mute">Computed on this phone</span></div>
-    ${segs(PERIODS, per, "gper")}
-    ${scoreExplain(sc).map(([k, n, v, why]) => `<div class="score ${k === "overall" ? "ov" : ""}"><div class="row between"><b>${n}</b><b class="num">${v}</b></div><i class="track"><i style="width:${v}%"></i></i><span class="tiny mute">${why}</span></div>`).join("")}
-    <p class="tiny mute">Fair to beginners by design: consistency and progress compare you with your own past, and strength is relative to your bodyweight. Cosmetics never affect any score.</p></section>`;
-  if (!GUILD_ON) return `<div class="page-h"><h1>Guild</h1></div>
-    <section class="card notice"><h3>Guild server not connected</h3>
-    <p class="sm">Live gym leaderboards need the Ascendant guild server. This build has no server configured, so there is no live ranking to show and the app will not invent one.</p>
-    <p class="tiny mute">To switch it on: create a Supabase project, run <b>supabase/schema.sql</b>, enable anonymous sign-in, add your gym with a join code, then put the project URL and anon key in <b>js/config.js</b>. Steps are in the README.</p></section>${local}`;
-  if (!g.guildId && S.demo) return `<div class="page-h"><h1>Guild</h1></div>
-    <section class="card notice"><h3>Demo data cannot join a guild</h3><p class="sm">Guild rankings only accept real training. Start your own profile to join your gym.</p><button class="btn" data-act="reset">Start my own</button></section>${local}`;
-  if (!g.guildId) return `<div class="page-h"><h1>Guild</h1></div>
-    <section class="card"><h3>Join your gym's guild</h3><p class="sm mute">Your gym gives you a join code. Pick a nickname that other members will see. Only your nickname and your four scores are shared, never your logs, photos or weight.</p>
-    <label class="lab" for="gcode">Gym join code</label><input id="gcode" class="input" autocapitalize="characters" placeholder="e.g. YODHA-24">
-    <label class="lab" for="gnick">Nickname</label><input id="gnick" class="input" maxlength="20" value="${esc(S.profile.name)}">
-    <button class="btn" data-act="guild-join">Join guild</button><p class="tiny mute" id="gerr" role="alert"></p></section>${local}`;
-  const bk = cat + ":" + per, b = (UI.board || {})[bk];
-  const seen = b && b.prevSeen;
-  let list;
-  if (!b || b.loading) list = `<p class="mute sm">Loading leaderboard…</p>`;
-  else if (b.err) list = `<p class="sm bad-t">Could not load the leaderboard: ${esc(b.err)}</p><button class="btn ghost sm" data-act="guild-refresh">Try again</button>`;
-  else if (!b.rows.length) list = `<p class="mute sm">No scores submitted for this period yet. Yours is sent when you open this screen.</p>`;
-  else { const me = b.rows.find(r => r.is_me), delta = me && seen ? seen - me.rank : 0;
-    list = `${me ? `<div class="me-pos"><span class="num big">#${me.rank}</span><div><b>Your position</b><div class="tiny mute">of ${b.rows[0].member_count || b.rows.length} members${seen ? (delta > 0 ? `, up ${delta} since your last visit` : delta < 0 ? `, down ${-delta} since your last visit` : ", unchanged since your last visit") : ""}</div></div></div>` : ""}
-      <ol class="board">${b.rows.slice(0, 50).map(r => `<li class="${r.is_me ? "me" : ""}"><span class="rk num">${r.rank}</span><span class="nm">${esc(r.nickname)}</span><span class="sc num">${r.score}</span></li>`).join("")}</ol>
-      <p class="tiny mute">Live from the guild server, fetched ${new Date(b.at).toLocaleTimeString("en-IN", {hour:"2-digit", minute:"2-digit"})}.</p>`; }
-  const hist = UI.ghist;
-  return `<div class="page-h"><h1>Guild</h1><button class="btn sm ghost" data-act="guild-refresh">Sync</button></div>
-  <section class="card gid">${hexBadge((g.guildName || "G")[0], 52, "rank")}<div><h3>${esc(g.guildName)}</h3><div class="tiny mute">You are @${esc(g.nickname)}${b && b.rows && b.rows[0] ? `, ${b.rows[0].member_count} members` : ""}</div></div></section>
-  ${segs(CATS, cat, "gcat")}${segs(PERIODS, per, "gper")}
-  <section class="card">${list}</section>
-  <section class="card"><div class="row between"><h3>Competition history</h3><button class="btn sm ghost" data-act="guild-history">${hist ? "Refresh" : "Load"}</button></div>
-    ${hist ? (hist.err ? `<p class="sm bad-t">${esc(hist.err)}</p>` : hist.rows.length ? hist.rows.slice(0, 12).map(r => `<div class="line"><span>${esc(r.period)} ${esc(r.period_key)}, ${esc(r.category)}</span><b class="num">#${r.rank} of ${r.member_count}</b></div>`).join("") : `<p class="mute sm">Finished periods appear here.</p>`) : `<p class="mute sm">Your final positions in past weeks and months.</p>`}</section>
-  ${local}
-  <button class="btn danger quiet" data-act="guild-leave">Leave guild and delete my guild data</button>`;
-}
-async function guildAutoload(C){
-  const g = S.guild; if (!GUILD_ON || !g || !g.guildId || S.demo) return;
-  const bk = (UI.gcat || "overall") + ":" + (UI.gper || "week"); UI.board = UI.board || {};
-  if (UI.board[bk]) return;
-  UI.board[bk] = {loading:true};
-  try {
-    if (!g.lastSync || Date.now() - g.lastSync > 15 * 60e3) await GuildAPI.submit(C);
-    const rows = await GuildAPI.board(UI.gcat || "overall", UI.gper || "week");
-    UI.board[bk] = {rows: rows || [], at: Date.now()};
-    const me = (rows || []).find(r => r.is_me);
-    if (me){ g.seenRanks = g.seenRanks || {}; UI.board[bk].prevSeen = g.seenRanks[bk]; g.seenRanks[bk] = me.rank;
-      if (bk === "overall:week") g.lastRank = {rank: me.rank, of: rows[0].member_count || rows.length, at: Date.now()}; save(); }
-  } catch(err){ UI.board[bk] = {err: err.message || String(err)}; }
-  if (UI.tab === "guild") render();
-}
-
 /* ---------------- SETTINGS / PLAN ---------------- */
 function viewSettings(C){
   const plan = planOn(TODAY()), st = S.settings, native = !!nativeLN();
   return `<div class="page-h"><button class="iconbtn" data-act="tab" data-v="home" aria-label="Back">${ICON.left}</button><h1>Plan and settings</h1></div>
+  ${accountCard()}
   <section class="card row gap"><div class="ava">${S.profile.photo ? `<img src="${S.profile.photo}" alt="">` : esc((S.profile.name || "?")[0].toUpperCase())}</div><div class="grow"><h3>@${esc(S.profile.name)}</h3>
     <div class="tiny mute">${S.profile.height || "?"} cm, goal ${S.profile.goal} kg, since ${fmt(fromKey(S.profile.startDate), {day:"numeric", month:"short", year:"numeric"})}</div></div><button class="btn sm ghost" data-act="edit-profile">Edit</button></section>
   ${secH("Theme")}<div class="tiles">${CATALOG.filter(it => it.slot === "theme").map(it => tile(it, C, S.look, false)).join("")}</div>
@@ -496,7 +437,7 @@ function viewSettings(C){
     <p class="tiny mute">Missed days stay missed. One streak shield per month saves your streak the first time you miss a planned day.</p></section>
   ${secH("Backup and restore")}<section class="card"><p class="sm mute">Your training data lives only on this phone. Save a backup before changing phones or reinstalling.</p>
     <div class="grid2"><button class="btn ghost sm" data-act="backup">Save backup</button><button class="btn ghost sm" data-act="restore">Restore</button></div></section>
-  <div class="grid2"><button class="btn ghost" data-act="demo">Load demo data</button><button class="btn danger" data-act="reset">Start fresh</button></div>
+  <div class="grid2">${CLOUD_ON && Cloud.session ? "" : `<button class="btn ghost" data-act="demo">Load demo data</button>`}<button class="btn danger" data-act="reset">Start fresh</button></div>
   <p class="tiny mute center">Ascendant ${VERSION}. Offline first. No ads. 3D hunter built on CC0 MakeHuman assets.</p>`;
 }
 
@@ -510,7 +451,7 @@ function renderOnboarding(){
       <button class="btn" data-act="onb-next">Create my hunter</button><div class="grid2"><button class="btn ghost" data-act="restore">Restore backup</button><button class="btn ghost" data-act="demo">Try demo data</button></div>`;
   if (o.step === 1) body = `<div class="grow"><h1>Your profile</h1>
       <div class="center"><button class="ava lg" data-act="photo" aria-label="Add a photo">${o.photo ? `<img src="${o.photo}" alt="">` : ICON.camera}</button><div class="tiny mute">Optional photo</div></div>
-      <label class="lab" for="n">Username</label><input id="n" class="input" data-o="name" value="${esc(o.name)}" placeholder="deepansh" autocomplete="nickname" maxlength="20">
+      <label class="lab" for="n">Username</label><input id="n" class="input" data-o="name" value="${esc(o.name)}" placeholder="deepansh" autocomplete="nickname" maxlength="20" ${CLOUD_ON && Cloud.session ? "readonly" : ""}>
       <div class="grid2"><div><label class="lab" for="h">Height (cm)</label><input id="h" class="input" inputmode="numeric" data-o="height" value="${esc(o.height)}" placeholder="175"></div>
       <div><label class="lab" for="w">Weight (kg)</label><input id="w" class="input" inputmode="decimal" data-o="weight" value="${esc(o.weight)}" placeholder="72"></div></div>
       <label class="lab" for="gl">Goal weight (kg)</label><input id="gl" class="input" inputmode="decimal" data-o="goal" value="${esc(o.goal)}" placeholder="68"></div>
@@ -544,7 +485,9 @@ function onbNext(){
       planHistory:[{from:t, plan:o.plan}], exercises:o.ex, logs:{}, weights:[{date:t, kg:+o.weight}], style:o.style, path:"solo", look:o.look, owned:[], ownedV2:true,
       hunterName: (o.hunterName || "").trim() || o.name.trim()});
     const C0 = compute(); S.seen = {level:C0.level, skills:[]}; S.seenEvo = C0.evo[0];
-    UI.onb = null; UI.tab = "home"; save(); render(); scrollTo(0, 0); toast("The System has registered you"); return;
+    UI.onb = null; UI.tab = "home"; save(); render(); scrollTo(0, 0); toast("The System has registered you");
+    if (CLOUD_ON && Cloud.session){ Sync.run(); refreshAccount().then(() => render()).catch(() => {}); }
+    return;
   }
   o.step++; renderOnboarding(); scrollTo(0, 0);
 }
@@ -615,11 +558,12 @@ function reportCard(){
     <div class="grid2"><button class="btn ghost" data-act="close">Close</button><button class="btn" data-act="share-week">${ICON.share}Share</button></div>`);
 }
 function passSheet(){
-  modal(`<h2>Ascendant Pass</h2><div class="price num">${PASS_PRICE}</div><p class="sm mute">One payment. No subscription.</p>
-    <ul class="ticks">${["Every rare and epic item, now and future", "Free body and face redesigns", "All themes", "Supports an independent app"].map(f => `<li>${ICON.check}<span>${f}</span></li>`).join("")}</ul>
+  const pr = (UI.products || []).find(p => p.id === "pass");
+  modal(`<h2>Ascendant Pass</h2><div class="price num">${pr ? "₹" + pr.amount_paise / 100 : PASS_PRICE}</div><p class="sm mute">One payment. No subscription.</p>
+    <ul class="ticks">${["Every rare and epic item, now and future", "Free body and face redesigns", "All themes", "Supports an independent app from Bokaro"].map(f => `<li>${ICON.check}<span>${f}</span></li>`).join("")}</ul>
     <p class="tiny mute">Legendary items are still earned by level, and nothing in the Pass affects guild rankings.</p>
-    <button class="btn" data-act="buy-pass">Unlock Pass (test, no charge)</button>
-    <p class="tiny warn">Payments are not connected in this build. This unlocks the Pass for testing without charging you.</p>`);
+    ${CLOUD_ON && !S.demo ? `<button class="btn" data-act="ac-buy" data-v="pass">Buy the Pass</button><p class="tiny mute">Secure payment by Razorpay: UPI, cards, net banking.</p>`
+      : `<p class="sm warn">Purchases need a signed-in Ascendant account.</p><button class="btn ghost" data-act="close">Close</button>`}`);
 }
 
 /* ---------------- ACTIONS ---------------- */
@@ -643,9 +587,8 @@ function finish(){
     <ul>${items.map(i => `<li><span>${esc(i[0])}</span><b class="num">+${i[1]}</b></li>`).join("")}</ul>
     ${prs.length ? `<p class="sm"><span class="pill pr">New PR</span> ${prs.map(esc).join(", ")}</p>` : ""}
     <button class="btn" data-act="close">${UI.queue && UI.queue.length ? "Continue" : "Done"}</button></div>`);
-  render(); scheduleReminders(); guildPush();
+  render(); scheduleReminders(); UI.board = {};
 }
-function guildPush(){ if (GUILD_ON && S.guild && S.guild.guildId && !S.demo){ S.guild.lastSync = 0; UI.board = {}; GuildAPI.submit(compute()).catch(() => {}); } }
 function checkLevelChange(before){ queueCeremonies(before, compute()); if (!$("#layer").innerHTML) nextCeremony(); }
 function curLog(){ return S.logs[logKey()]; }
 function addExercise(){
@@ -694,8 +637,8 @@ document.addEventListener("click", async e => {
       const tmp = Object.assign({}, S.look, UI.preview || {}); setIdentity(tmp, f, v);
       const diff = {}; ["gender", "skin", "face", "jaw", "nose", "eyes", "brows", "build", "beard", "top"].forEach(k => { if (tmp[k] !== S.look[k]) diff[k] = tmp[k]; });
       UI.preview = Object.keys(diff).length ? diff : null; UI.previewKind = UI.preview ? "identity" : null; render(); return; }
-    case "save-identity": { const C = compute(); if (!S.pass && C.crystals < REDESIGN_COST){ toast(`You need ${REDESIGN_COST} crystals`); UI.htab = "shop"; render(); return; }
-      if (!S.pass) S.wallet.spent += REDESIGN_COST; Object.assign(S.look, UI.preview); UI.preview = null; UI.previewKind = null; save(); render(); SFX.done(); toast("Hunter redesigned"); return; }
+    case "save-identity": { const C = compute(); if (!hasPass() && C.crystals < REDESIGN_COST){ toast(`You need ${REDESIGN_COST} crystals`); UI.htab = "shop"; render(); return; }
+      if (!hasPass()) S.wallet.spent += REDESIGN_COST; Object.assign(S.look, UI.preview); UI.preview = null; UI.previewKind = null; save(); render(); SFX.done(); toast("Hunter redesigned"); return; }
     case "cancel-preview": UI.preview = null; UI.previewItem = null; UI.previewKind = null; render(); return;
     case "buy-item": { const it = CAT[v], C = compute(); if (!it || it.earn) return;
       if (C.crystals < it.cost){ toast(`You need ${it.cost} crystals, you have ${C.crystals}`); UI.htab = "shop"; render(); return; }
@@ -705,9 +648,7 @@ document.addEventListener("click", async e => {
     case "buy-pack": { const pk = PACKS[0], C = compute(); if (C.crystals < pk.cost){ toast(`You need ${pk.cost} crystals, you have ${C.crystals}`); return; }
       S.wallet.spent += pk.cost; pk.items.forEach(id => { if (!S.owned.includes(id)) S.owned.push(id); });
       Object.assign(S.look, {top:"hoodie", bottom:"joggers", shoes:"high", topColor:"onyx", bottomColor:"onyx"}); save(); render(); SFX.done(); toast(`${pk.name} unlocked`); return; }
-    case "buy-crystals": S.wallet.bought += +v; save(); render(); SFX.done(); toast(`+${v} crystals added (test, no charge)`); return;
     case "pass": passSheet(); return;
-    case "buy-pass": S.pass = true; save(); closeModal(); render(); SFX.done(); toast("Ascendant Pass unlocked (test)"); return;
     case "go-today": { if (UI.editKey) return toast("Save or discard your log edit first"); goDay(TODAY()); render(); scrollTo(0, 0);
       if (!musclesOn(TODAY()).length && !(S.logs[TODAY()] && S.logs[TODAY()].type === "workout")) trainAnyway(); return; }
     case "open-day": goDay(b.dataset.k); render(); scrollTo(0, 0); return;
@@ -756,18 +697,6 @@ document.addEventListener("click", async e => {
     case "del-photo": { const i = +v, removed = S.photos.splice(i, 1)[0]; save(); render(); toast("Photo deleted", {label:"Undo", fn:() => { S.photos.splice(i, 0, removed); save(); render(); }}); return; }
     case "gcat": UI.gcat = v; render(); return;
     case "gper": UI.gper = v; render(); return;
-    case "guild-refresh": UI.board = {}; if (S.guild) S.guild.lastSync = 0; render(); return;
-    case "guild-join": { const code = ($("#gcode").value || "").trim().toUpperCase(), nick = ($("#gnick").value || "").trim();
-      if (!code || !nick) return toast("Enter the join code and a nickname"); if (S.demo) return toast("Demo data cannot join a guild");
-      b.disabled = true; b.textContent = "Joining…";
-      try { await GuildAPI.join(code, nick); UI.board = {}; render(); toast(`Joined ${S.guild.guildName}`); }
-      catch(err){ $("#gerr").textContent = "Could not join: " + (err.message || err); b.disabled = false; b.textContent = "Join guild"; } return; }
-    case "guild-history": { try { const rows = await GuildAPI.history(); UI.ghist = {rows: rows || []};
-        const best = (rows || []).filter(r => r.category === "overall").reduce((m, r) => Math.min(m, r.rank), 999); if (best < 999){ S.guild.bestFinish = Math.min(S.guild.bestFinish || 999, best); save(); } }
-      catch(err){ UI.ghist = {err: err.message || String(err)}; } render(); return; }
-    case "guild-leave": modal(`<h2>Leave guild?</h2><p class="mute">This removes your nickname and all your guild scores from the server. Your training data on this phone is not touched.</p>
-      <div class="grid2"><button class="btn ghost" data-act="close">Cancel</button><button class="btn danger" data-act="confirm-leave">Leave and delete</button></div>`); return;
-    case "confirm-leave": try { await GuildAPI.leave(); S.guild = null; UI.board = {}; UI.ghist = null; save(); closeModal(); render(); toast("You left the guild"); } catch(err){ toast("Could not leave: " + (err.message || err)); } return;
     case "style": S.style = v; save(); render(); return;
     case "add-skill-ex": { const ex = b.dataset.e, L = ensureToday(musclesOn(TODAY())); if (!L.entries.some(e => e.ex === ex)) L.entries.push({ex, sets:[{}, {}, {}]}); save();
       goDay(TODAY()); render(); scrollTo(0, 0); toast(`${ex} added to today`); return; }
@@ -794,11 +723,17 @@ document.addEventListener("click", async e => {
     case "restore-file": $("#restore").click(); return;
     case "restore-paste": restoreFrom($("#paste").value.trim()); return;
     case "confirm-restore": S = migrate(UI.restore); if (!S.seen){ const C0 = compute(); S.seen = {level:C0.level, skills:C0.skills.unlocked.map(skId)}; S.seenEvo = C0.evo[0]; } UI.restore = null; UI.onb = null; UI.achInit = false; save(); closeModal(); UI.tab = "home"; render(); toast("Backup restored"); return;
-    case "demo": S = demoState(); S.demo = true; S.hunterName = "Demo Hunter"; { const C0 = compute(); S.seen = {level:C0.level, skills:C0.skills.unlocked.map(skId)}; S.seenEvo = C0.evo[0]; }
+    case "demo": if (CLOUD_ON) STORE_KEY = KEY + ":demo"; UI.auth = null; S = demoState(); S.demo = true; S.hunterName = "Demo Hunter"; { const C0 = compute(); S.seen = {level:C0.level, skills:C0.skills.unlocked.map(skId)}; S.seenEvo = C0.evo[0]; }
       UI.onb = null; UI.achInit = false; save(); UI.tab = "home"; UI.period = "week"; render(); scrollTo(0, 0); toast("Demo data loaded"); return;
-    case "reset": modal(`<h2>Start fresh?</h2><p class="mute">This deletes every workout, weight, photo and XP on this phone. Save a backup first if you might want it back.</p>
-      <div class="grid2"><button class="btn ghost" data-act="close">Cancel</button><button class="btn danger" data-act="confirm-reset">Delete everything</button></div>`); return;
-    case "confirm-reset": closeModal(); stopTimer(); S = null; try { localStorage.removeItem(KEY); } catch(err){} UI.onb = blankOnb(); UI.tab = "home"; render(); scrollTo(0, 0); return;
+    case "reset":
+      if (S && S.demo){ try { localStorage.removeItem(STORE_KEY); } catch(err){} S = null; STORE_KEY = KEY; UI.onb = null; UI.tab = "home";
+        if (CLOUD_ON){ UI.auth = {step:"welcome"}; } else UI.onb = blankOnb(); render(); scrollTo(0, 0); return; }
+      modal(`<h2>Start fresh?</h2><p class="mute">This deletes every workout, weight, photo and XP${CLOUD_ON && Cloud.session ? " on this phone and on the Ascendant server. Your account, username and guild stay" : " on this phone. Save a backup first if you might want it back"}.</p>
+      <div class="grid2"><button class="btn ghost" data-act="close">Cancel</button><button class="btn danger" data-act="confirm-reset">Delete my training</button></div>`); return;
+    case "confirm-reset": {
+      if (CLOUD_ON && Cloud.session){ try { await Cloud.rpc("reset_my_training"); } catch(err){ return toast("Could not reset on the server: " + err.message); } }
+      closeModal(); stopTimer(); const uname = CLOUD_ON && Cloud.session ? Cloud.session.username : ""; S = null; try { localStorage.removeItem(STORE_KEY); } catch(err){}
+      UI.onb = blankOnb(); UI.onb.name = uname; UI.onb.step = uname ? 1 : 0; UI.tab = "home"; render(); scrollTo(0, 0); return; }
     case "onb-style": UI.onb.style = v; UI.onb.ex = {}; renderOnboarding(); return;
     case "onb-day": { const o = UI.onb, d = +b.dataset.d, m = b.dataset.m; o.plan[d] = o.plan[d].includes(m) ? o.plan[d].filter(x => x !== m) : [...o.plan[d], m]; renderOnboarding(); return; }
     case "onb-ex": { const o = UI.onb, m = b.dataset.m, ex = b.dataset.e; o.ex[m] = o.ex[m].includes(ex) ? o.ex[m].filter(x => x !== ex) : [...o.ex[m], ex]; renderOnboarding(); return; }
@@ -836,13 +771,3 @@ $("#progress").addEventListener("change", e => { const f = e.target.files[0]; if
 $("#restore").addEventListener("change", e => { const f = e.target.files[0]; if (!f) return; const r = new FileReader(); r.onload = () => restoreFrom(String(r.result)); r.readAsText(f); e.target.value = ""; });
 document.addEventListener("visibilitychange", () => { if (!document.hidden && S && !UI.onb && !document.activeElement.matches("input,textarea,select")) render(); });
 
-/* ---------------- BOOT ---------------- */
-S = load();
-if (!S) UI.onb = blankOnb();
-else if (!S.seen){ const C0 = compute(); S.seen = {level:C0.level, skills:C0.skills.unlocked.map(skId)}; S.seenEvo = C0.evo[0]; save(); }
-else if (S.seenEvo === undefined){ S.seenEvo = evoOf(S.seen.level)[0]; save(); }
-render();
-(function autoReport(){ if (!S || UI.onb) return; const thisMon = keyOf(mondayOf(todayD()));
-  if (S.seenReport !== thisMon && S.profile.startDate < thisMon){ const C = compute(); if (gradeOf(weekStats(C, addDays(mondayOf(todayD()), -7)))) setTimeout(reportCard, 700); else { S.seenReport = thisMon; save(); } } })();
-scheduleReminders();
-if ("serviceWorker" in navigator && location.protocol === "https:" && !/claude|claudeusercontent/.test(location.hostname)) navigator.serviceWorker.register("sw.js").catch(() => {});

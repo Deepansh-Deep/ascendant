@@ -98,6 +98,11 @@ const server = http.createServer(async (req, res) => {
       const r = await pool.query("select * from auth.users where id = $1", [w.sub]);
       return r.rows.length ? send(res, 200, { id: r.rows[0].id, email: r.rows[0].email, user_metadata: r.rows[0].raw_user_meta_data }) : send(res, 401, { msg: "User not found" });
     }
+    if (p === "/auth/v1/user" && req.method === "PUT") {
+      const w = caller(req); if (!w.sub) return send(res, 401, { msg: "Invalid JWT" });
+      const b = body(); if (!b.password || b.password.length < 6) return send(res, 422, { msg: "Password should be at least 6 characters." });
+      await pool.query("update auth.users set encrypted_password = $1 where id = $2", [hash(b.password), w.sub]); return send(res, 200, { id: w.sub });
+    }
     if (p === "/auth/v1/logout") { tokens.delete((req.headers.authorization || "").replace(/^Bearer /, "")); return send(res, 204); }
     let m;
     if ((m = /^\/auth\/v1\/admin\/users\/([^/]+)$/.exec(p)) && req.method === "PUT") {

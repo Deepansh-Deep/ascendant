@@ -43,7 +43,7 @@ const CAT = Object.fromEntries(CATALOG.map(i => [i.id, i]));
 const PACKS = [{id:"pack:nightops", name:"Night Ops Pack", desc:"Heavyweight hoodie, tapered joggers, high-tops and onyx colourway", cost:29, items:["top:hoodie","bottom:joggers","shoes:high","color:onyx"]}];
 const REDESIGN_COST = 29, PASS_PRICE = "₹149";
 const CRYSTAL_PACKS = [[10,"₹10",10],[49,"₹49",55],[99,"₹99",120]];
-function owns(id, level){ const it = CAT[id]; if (!it) return false; if (it.earn) return level >= it.earn; if (!it.cost) return true; return !!(S.pass || S.owned.includes(id)); }
+function owns(id, level){ const it = CAT[id]; if (!it) return false; if (it.earn) return level >= it.earn; if (!it.cost) return true; return !!(hasPass() || S.owned.includes(id)); }
 
 /* ---------------- evolution tiers ---------------- */
 const EVOLUTION = [[1,"Recruit","Untrained frame. Everything starts here."],[6,"Disciplined","Posture improves. Shoulders start to open."],
@@ -88,7 +88,7 @@ const ACH = [
   ["hundred_tonnes","Hundred Tonnes","Move 100,000 kg in total","epic", C => C.volumeAll >= 100000],
   ["legend_form","Legend Form","Evolve into the Legend form","legendary", C => C.level >= 45],
   ["ascendant","Ascendant","Reach Level 60","legendary", C => C.level >= 60],
-  ["guild_warrior","Guild Warrior","Finish a guild season in the top 3","legendary", C => !!(S.guild && S.guild.bestFinish && S.guild.bestFinish <= 3)],
+  ["guild_warrior","Guild Warrior","Finish a guild season in the top 3","legendary", C => !!(S.guildBest && S.guildBest <= 3)],
 ].map(([id,name,desc,rarity,test]) => ({id,name,desc,rarity,test}));
 const ACH_CRYSTALS = {common:1, rare:2, epic:5, legendary:10};
 
@@ -134,7 +134,7 @@ migrate = function(s){
 };
 function crystalsOf(C){
   const ach = (C.ach || []).reduce((a, id) => a + ACH_CRYSTALS[ACH.find(x => x.id === id).rarity], 0);
-  return 5 + RANKS.indexOf(C.rank) * 5 + Object.keys(C.fullWeekKeys || C.weekBonus).length * 2 + C.skills.unlocked.length * 3 + ach + S.wallet.bought - S.wallet.spent;
+  return Math.max(0, 5 + RANKS.indexOf(C.rank) * 5 + Object.keys(C.fullWeekKeys || C.weekBonus).length * 2 + C.skills.unlocked.length * 3 + ach + boughtCrystals() - S.wallet.spent);
 }
 function checkAchievements(C){
   const fresh = C.ach.filter(id => !S.achieved[id]);
@@ -143,75 +143,9 @@ function checkAchievements(C){
   fresh.slice(0, 3).forEach((id, i) => setTimeout(() => banner(ACH.find(a => a.id === id)), 400 + i * 2600));
 }
 
-/* ---------------- guild: transparent scoring (local) + server client ---------------- */
+/* ---------------- guild scores: one implementation shared with the server (js/scoring.js) ---------------- */
 const CFG = window.ASCENDANT_CONFIG || {};
-const GUILD_ON = !!(CFG.supabaseUrl && CFG.supabaseAnonKey);
-function periodRange(period){
-  const t = todayD();
-  if (period === "week"){ const m = mondayOf(t); return [m, addDays(m, 6)]; }
-  if (period === "month") return [new Date(t.getFullYear(), t.getMonth(), 1), new Date(t.getFullYear(), t.getMonth() + 1, 0)];
-  return [fromKey(S.profile.startDate), t];
-}
-function bestE1RM(fromK, toK){
-  const best = {};
-  for (const k in S.logs){ if (k < fromK || k > toK) continue; const l = S.logs[k]; if (l.type !== "workout") continue;
-    for (const e of l.entries){ if (!isWeighted(e.ex)) continue; const b = bestSet(e.ex, e.sets); if (b && b.score > (best[e.ex]||0)) best[e.ex] = b.score; } }
-  return best;
-}
-function guildScores(C, period){
-  const [a, b] = periodRange(period), t = TODAY(), fk = keyOf(a), tk = keyOf(b) < t ? keyOf(b) : t;
-  // consistency: planned days trained / planned days so far (max 6 counted per week)
-  let planned = 0, done = 0; const perWeek = {};
-  for (const k in C.days){ if (k < fk || k > tk) continue; const x = C.days[k]; if (!x.planned) continue; if (k === t && !x.did) continue;
-    const wk = keyOf(mondayOf(fromKey(k))); perWeek[wk] = perWeek[wk] || {p:0, d:0};
-    if (perWeek[wk].p < 6){ perWeek[wk].p++; planned++; if (x.did){ perWeek[wk].d++; done++; } } }
-  const consistency = planned ? Math.round(done / planned * 100) : 0;
-  // strength: average estimated 1RM of your 3 strongest lifts relative to bodyweight; or skill-tree mastery for bodyweight athletes
-  const bw = currentWeight() || 70, cur = bestE1RM(fk, tk);
-  const top3 = Object.values(cur).sort((x, y) => y - x).slice(0, 3);
-  const rel = top3.length ? top3.reduce((s, v) => s + v / bw, 0) / top3.length : 0;
-  const liftScore = Math.min(100, Math.round(rel / 1.5 * 100)), skillScore = Math.round(C.skills.unlocked.length / 25 * 100);
-  const strength = Math.max(liftScore, skillScore);
-  // progress: % gain vs your own previous 4 weeks, capped (4%/week, 15%/month) so maxing out recklessly never pays
-  const prevFrom = keyOf(addDays(a, -28)), prevTo = keyOf(addDays(a, -1)), prev = bestE1RM(prevFrom, prevTo);
-  const gains = Object.keys(cur).filter(ex => prev[ex]).map(ex => cur[ex] / prev[ex] - 1);
-  const cap = period === "week" ? 0.04 : 0.15;
-  const avgGain = gains.length ? gains.reduce((s, g) => s + g, 0) / gains.length : 0;
-  const skillsIn = C.skills.unlocked.filter(u => u.date >= fk && u.date <= tk).length;
-  const progress = Math.min(100, Math.round(Math.max(0, Math.min(avgGain, cap)) / cap * 80 + skillsIn * 10));
-  const overall = Math.round(consistency * 0.4 + progress * 0.3 + strength * 0.3);
-  return {consistency, strength, progress, overall, detail:{planned, done, rel: rel.toFixed(2), gainPct: (avgGain * 100).toFixed(1), lifts: top3.length, skillsIn}};
-}
-const GuildAPI = {
-  async req(path, body, auth = true){
-    const h = {"apikey": CFG.supabaseAnonKey, "Content-Type": "application/json"};
-    if (auth && S.guild && S.guild.session) h.Authorization = "Bearer " + S.guild.session.access_token;
-    const r = await fetch(CFG.supabaseUrl.replace(/\/$/, "") + path, {method:"POST", headers:h, body: JSON.stringify(body || {})});
-    const txt = await r.text(); let j = null; try { j = txt ? JSON.parse(txt) : null; } catch(e){}
-    if (!r.ok) throw new Error((j && (j.message || j.msg || j.error_description)) || ("HTTP " + r.status));
-    return j;
-  },
-  async session(){
-    S.guild = S.guild || {};
-    const s = S.guild.session;
-    if (s && s.expires_at && s.expires_at * 1000 > Date.now() + 60000) return s;
-    const j = s && s.refresh_token ? await this.req("/auth/v1/token?grant_type=refresh_token", {refresh_token: s.refresh_token}, false)
-                                   : await this.req("/auth/v1/signup", {}, false);
-    S.guild.session = {access_token: j.access_token, refresh_token: j.refresh_token, expires_at: j.expires_at || (Date.now()/1000 + (j.expires_in||3600)), user: j.user && j.user.id};
-    save(); return S.guild.session;
-  },
-  async rpc(fn, args){ await this.session(); return this.req("/rest/v1/rpc/" + fn, args); },
-  async join(code, nickname){ const g = await this.rpc("join_guild", {p_code: code, p_nickname: nickname}); Object.assign(S.guild, {guildId: g.guild_id, guildName: g.guild_name, nickname}); save(); return g; },
-  async submit(C){
-    for (const period of ["week","month","all"]){ const sc = guildScores(C, period);
-      await this.rpc("submit_scores", {p_period: period, p_period_key: periodKey(period), p_consistency: sc.consistency, p_strength: sc.strength, p_progress: sc.progress, p_overall: sc.overall}); }
-    S.guild.lastSync = Date.now(); save();
-  },
-  board(category, period){ return this.rpc("guild_leaderboard", {p_category: category, p_period: period, p_period_key: periodKey(period)}); },
-  history(){ return this.rpc("my_competition_history", {}); },
-  leave(){ return this.rpc("leave_guild_and_delete", {}); }
-};
-function periodKey(p){ const t = todayD(); return p === "week" ? keyOf(mondayOf(t)) : p === "month" ? keyOf(t).slice(0, 7) : "all"; }
+function guildScores(C, period){ return AscendantScoring.guildScores(S, period, TODAY()); }
 
 /* ---------------- small helpers ---------------- */
 Object.assign(ICON, {

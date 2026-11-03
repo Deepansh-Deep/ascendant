@@ -163,5 +163,13 @@ ok((await rpc("request_join", { p_join_code: JOIN }, p1T)).ok && (await rpc("lea
 const direct = await call("POST", "/rest/v1/rpc/_master_guild", {}, p1T); ok(!direct.ok, "internal helper functions are not callable", direct.data);
 const adm = await rpc("admin_mark_paid", { p_order_id: ord.data.order_id, p_payment_id: "x" }, p1T); ok(!adm.ok, "app users cannot call admin functions", adm.data);
 
+// ---------- 10. account self-service
+console.log("self-service");
+const pw = await call("PUT", "/auth/v1/user", { password: "changed123" }, p2T); ok(pw.ok && (await login(P2, "changed123")).ok, "user changes own password");
+await rpc("sync_push", { p_logs: [{ day: today, data: { type: "rest" } }], p_state: { profile: { startDate: today } } }, p2T);
+ok((await rpc("reset_my_training", {}, p2T)).ok, "user resets own training");
+const after = (await rpc("sync_pull", { p_since: null }, p2T)).data; ok(after.logs.length === 0 && after.state === null, "reset leaves nothing on the server", after);
+ok((await rpc("my_account", {}, p2T)).data.username === P2, "account itself survives a training reset");
+
 console.log(`\n${pass} passed, ${failN} failed`);
 process.exit(failN ? 1 : 0);

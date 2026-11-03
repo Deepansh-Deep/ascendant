@@ -392,3 +392,22 @@ textarea.input{min-height:110px;padding:12px;font-size:12px}
 
 @media (prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important}}
 @media (min-width:600px){.hero-stage{height:540px}.stats4{grid-template-columns:repeat(4,1fr)}}
+
+/* ---------- accounts, guild management, admin ---------- */
+.err{color:var(--bad);font-size:13.5px;min-height:1px}
+.err:empty{display:none}
+.good-t{color:var(--good)}
+.auth .grow>*+*{margin-top:12px}
+.auth .choice{margin-top:12px}
+.spin.sm{width:14px;height:14px;border-width:2px;display:inline-block;vertical-align:-2px;margin-right:6px}
+.glogo{width:var(--s);height:var(--s);border-radius:14px;object-fit:cover;flex:none;background:var(--surface2);border:1px solid var(--line2)}
+.logo-pick{display:flex;flex-direction:column;align-items:center;gap:6px;color:var(--acc);flex:none}
+.code-big{font-size:40px;letter-spacing:.12em;text-align:center;padding:10px;border-radius:12px;background:var(--surface2);border:1px dashed var(--line2)}
+.code{font-size:18px;letter-spacing:.06em}
+.newcodes{margin-top:10px;padding:4px 12px;border-radius:12px;background:var(--acc-soft)}
+.board .nm{display:flex;flex-direction:column;line-height:1.25}
+.board .nm .tiny{font-weight:400}
+.update-bar{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 14px;border-radius:14px;background:var(--acc-soft);border:1px solid var(--acc)}
+.update-bar>div{display:flex;flex-direction:column}
+.update-bar .btn{text-decoration:none;flex:none}
+.card .grid3{margin-top:12px}
