@@ -1,0 +1,59 @@
+name: Publish website
+
+# Builds the website (site/), the web app (www/ at /app/) and version.json, and publishes them to GitHub Pages.
+on:
+  push:
+    branches: [ main ]
+    paths: [ 'site/**', 'www/**', '.github/workflows/pages.yml' ]
+  workflow_dispatch:
+  workflow_call:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Assemble site
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p _site/fonts
+          cp -r site/* _site/
+          cp www/fonts/*.woff2 _site/fonts/
+          cp -r www _site/app && rm -rf _site/app/dev
+          # version.json for the download page and the in-app update check, from the latest release
+          REL=$(gh api "repos/${GITHUB_REPOSITORY}/releases/latest" 2>/dev/null || echo '{}')
+          python3 - "$REL" "${GITHUB_REPOSITORY}" <<'PY'
+          import json, sys
+          try: rel = json.loads(sys.argv[1])
+          except Exception: rel = {}
+          repo = sys.argv[2]
+          tag = rel.get("tag_name") or ""; ver = tag.lstrip("v")
+          apk = next((a for a in rel.get("assets", []) if a.get("name") == f"ascendant-{ver}.apk"), None)
+          out = {"version": ver, "apk_url": apk["browser_download_url"], "size_mb": round(apk["size"] / 1048576, 1),
+                 "date": rel.get("published_at"), "notes": "Install over your current version. Your training stays."} if apk else \
+                {"version": "0.0.0", "apk_url": "", "notes": "No Android release yet."}
+          json.dump(out, open("_site/version.json", "w"))
+          print(out)
+          PY
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with: { path: _site }
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.d.outputs.page_url }}
+    steps:
+      - id: d
+        uses: actions/deploy-pages@v4

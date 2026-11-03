@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Contact Ascendant</title><meta name="theme-color" content="#0E0F12"><link rel="icon" href="app/icons/icon-192.png"><link rel="stylesheet" href="site.css"></head>
+<body>
+<header class="nav"><div class="wrap"><a class="brand" href="./">Ascendant</a><nav><a href="download.html">Download</a></nav></div></header>
+<main class="wrap doc">
+  <h1>Contact</h1>
+  <p>Gym owners, members, payment questions, account help or password resets.</p>
+  <div id="c" class="callout"></div>
+</main>
+<footer><div class="wrap"><span>© 2026 Ascendant</span><nav><a href="terms.html">Terms</a><a href="privacy.html">Privacy</a><a href="refunds.html">Refunds</a></nav></div></footer>
+<script src="site-config.js"></script>
+<script>
+const S = window.SITE || {}, rows = [];
+const esc = t => String(t).replace(/[&<>"]/g, c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;"}[c]));
+rows.push("<b>" + esc(S.business || "Ascendant") + "</b><br>" + esc(S.city || ""));
+if (S.email) rows.push('Email: <a href="mailto:' + esc(S.email) + '">' + esc(S.email) + "</a>");
+if (S.phone) rows.push("Phone: " + esc(S.phone));
+if (S.whatsapp) rows.push('WhatsApp: <a href="https://wa.me/' + esc(S.whatsapp) + '">+' + esc(S.whatsapp) + "</a>");
+if (S.instagram) rows.push('Instagram: <a href="https://instagram.com/' + esc(S.instagram) + '">@' + esc(S.instagram) + "</a>");
+if (rows.length === 1) rows.push("Contact details are being added. Meanwhile, ask for Ascendant at your gym.");
+document.getElementById("c").innerHTML = rows.join("<br><br>");
+</script>
+</body></html>

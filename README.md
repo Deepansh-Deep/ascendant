@@ -1,38 +1,54 @@
-# Ascendant 2.0
+# Ascendant 2.1
 
 A gym tracker built as a fitness RPG. You log real sets; a realistic 3D hunter evolves with your training; your gym's guild ranks members fairly.
 
-Offline first. Training data never leaves the phone. The optional guild server only receives a nickname and four scores.
+Offline first: everything saves on the phone and syncs to your account in the background. Distributed outside Google Play: APK from the website, payments through Razorpay.
+
+Website: https://deepansh-deep.github.io/ascendant/ (after Pages is switched on, see Going live).
 
 ## What's inside
 
 ```
-www/                      The app (installable PWA, also wrapped by Capacitor for Android)
-  index.html              Shell: loads the CSS and scripts below
-  css/app.css             Design system (tokens, components, themes)
-  js/core.js              Engine: dates, state, XP, levels, ranks, skills, body stages, timer, backup, reminders, demo data
-  js/ui.js                Catalog (rarity, prices), evolution tiers, challenges, achievements, guild scoring + server client, charts
-  js/views.js             Every screen, onboarding, actions, boot
-  js/hunter3d.js          3D engine (three.js): loads the GLB hunters, customization, morph evolution, poses, camera, aura
-  js/config.js            Guild server URL + anon key (empty = offline only)
-  vendor/three-bundle.js  three.js r187 + GLTFLoader + RoomEnvironment (MIT, see THREE-LICENSE.txt)
-  assets/hunter/          Generated 3D characters and textures (CC0)
-  fonts/                  Sora, Inter, Barlow Condensed (OFL)
-  dev/viewer.html         3D test harness (URL params: look, body, pose, view, zoom, aura)
-pipeline/                 Python generator for the 3D characters (see pipeline/README.md)
-supabase/schema.sql       Guild server: tables, row-level security, RPC functions
-android/                  Capacitor Android project
-.github/workflows/        Cloud build that produces an installable debug APK
+www/                      The app (PWA + Capacitor Android)
+  js/core.js              Engine: dates, state, XP, levels, ranks, skills, body stages, timer, backup, reminders, demo
+  js/ui.js                Catalog and rarity, evolution tiers, challenges, achievements, charts
+  js/scoring.js           Guild scoring. ONE copy shared with the server (supabase/functions/_shared)
+  js/cloud.js             Accounts, offline-first sync, server wallet, Razorpay checkout
+  js/views.js             Home, Train, Hunter studio, Progress, Settings, onboarding, ceremonies
+  js/account.js           Sign in / register, join-guild step, Guild tab, Guild Master panel, owner Admin
+  js/boot.js              Startup, session restore, update check
+  js/hunter3d.js          3D engine (three.js): GLB hunters, customization, morph evolution, poses
+  js/config.js            Server URL + anon key + update URL (empty server = offline build)
+  assets/hunter/          Generated 3D characters (CC0)
+  dev/viewer.html         3D test harness
+site/                     Website (landing, download, contact, terms, privacy, refunds)
+pipeline/                 Python generator for the 3D characters
+supabase/schema.sql       Database: tables, row level security, all functions
+supabase/storage.sql      Public bucket for gym logos
+supabase/functions/       Edge functions: compute-scores, upload-logo, owner-admin, create-order, verify-payment, razorpay-webhook
+supabase/test/            Mock Supabase on real Postgres, server tests, browser end-to-end test
+android/                  Capacitor Android project (release signing reads GitHub secrets)
+.github/workflows/        build-apk (every push), release (tags v*), pages (website)
 ```
+
+## Roles
+
+| Role | How they get in | What they can do |
+|---|---|---|
+| Owner (you) | Register normally, then mark yourself owner in SQL (once) | Admin tab: stats, create and revoke Guild Master codes, extend or suspend gym subscriptions, view any leaderboard, search users, reset passwords |
+| Guild Master | Code from the owner, then own username and password | Gym name, city, logo, join code, approve or reject join requests, remove members, see members' weekly scores and last activity |
+| Participant | Username (unique) and password (8+ characters) | Train solo; join a gym guild now or later (needs approval); buy cosmetics |
+
+Usernames are unique. Passwords are not checked for uniqueness on purpose: that would tell people other users' passwords. Forgotten passwords are reset by the owner from the Admin tab.
 
 ## Screens
 
-- **Home**: large interactive 3D hunter, hunter name and @username, rank badge, level and XP bar, next evolution milestone, today's workout status, daily and weekly challenges, badges, streak, consistency, bodyweight, gym ranking, last week's grade.
-- **Train**: Workout (week strip, per-day log, sets, reps, weight, rest timer, "same as last time", last session and all-time best per exercise, live PR detection), Skills (calisthenics trees), History (every session with sets, volume and PR count). Past logs can be edited or discarded; missed days stay missed.
-- **Hunter**: 3D studio with Front, Angle, Side, Back and Face views, drag to rotate, pinch or scroll to zoom. Customize (body, skin, face shape, jaw, nose, eyes, brows, frame, hunter name, hair and color, facial hair, tops, bottoms, footwear, garment colors, gear, aura, pose), Evolution (tier ladder and per-muscle stages), Shop, Badges.
-- **Progress**: week, month or all time; weekly volume chart, consistency chart, strength trend per exercise (estimated 1RM, Epley), muscles trained, personal records, bodyweight trend, progress photos, report card.
-- **Guild**: join with a gym code and nickname, leaderboards (Overall, Consistency, Strength, Progress; weekly, monthly, all time), your position and change since your last visit, competition history, leave and delete. Without a configured server it says so and only shows your locally computed scores.
-- **Plan and settings** (gear icon on Home): profile, theme, training style, weekly split, exercises, reminders, rest timer, sound, rank ladder, XP rules, backup and restore, demo data, reset.
+- **Home**: large interactive 3D hunter, hunter name, @username, rank, level and XP, next evolution, today's workout, challenges, stats, badges, gym ranking card, last week's grade.
+- **Train**: per-day logging with rest timer, last session and best set, live PR detection, editable history, skill trees.
+- **Hunter**: 3D studio (views, rotate, zoom), customization, evolution, shop (Razorpay), badges.
+- **Progress**: volume, consistency, strength trend, muscle split, records, bodyweight, photos, report card.
+- **Guild**: participant (join with code, pending state, live leaderboards, history, leave), Guild Master (leaderboard plus Manage), owner (Admin).
+- **Settings**: account (sync status, sync now, change password, sign out), profile, theme, split, exercises, reminders, backup, start fresh.
 
 ## The 3D hunter
 
@@ -57,7 +73,7 @@ android/                  Capacitor Android project
 
 Free crystals: 5 starting, 5 per rank, 2 per full week, 3 per skill, 1 / 2 / 5 / 10 per common / rare / epic / legendary badge. Nothing purchasable affects XP, rankings or guild scores.
 
-**Payments are not connected.** The crystal pack and Pass buttons are labelled "test, no charge" and grant items without payment. Before charging real money, integrate Google Play Billing in `www/js/views.js` (actions `buy-crystals` and `buy-pass`).
+Crystal packs and the Pass are sold through Razorpay with server-side prices and verification (see Payments). The offline build shows no purchase buttons. Prices can be changed in the `products` table without a new app release.
 
 Users upgrading from 1.x keep their purchases where a 3D equivalent exists; items with no equivalent (eye styles, mouths, name fonts, name colors) are refunded as crystals automatically.
 
@@ -77,58 +93,73 @@ Users upgrading from 1.x keep their purchases where a 3D equivalent exists; item
 
 Level `L` needs `200 × (L−1) + 25 × L × (L−1)` total XP. Everything is recomputed from the logs, so XP cannot drift or be faked locally by editing a counter.
 
+## Going live (your checklist)
+
+Everything below is a one-time setup only you can do, because it needs your accounts. In order:
+
+1. **Turn on the website.** GitHub repo > Settings > Pages > Source: **GitHub Actions**. Then Actions > "Publish website" > Run workflow. The site appears at https://deepansh-deep.github.io/ascendant/.
+2. **Add the signing secrets.** Follow `ASCENDANT-SIGNING-KEY-README.txt` in your `Ascendant/signing-key` folder (four secrets). Keep that folder backed up; it is not in this repository.
+3. **Create the Supabase project** (supabase.com, free to start, Mumbai region).
+   - SQL editor: run `supabase/schema.sql`, then `supabase/storage.sql`.
+   - Authentication > Providers > Email: turn **off** "Confirm email" (usernames map to hidden addresses that cannot receive mail).
+   - Install the Supabase CLI and deploy the functions:
+     `supabase functions deploy compute-scores upload-logo owner-admin create-order verify-payment`
+     `supabase functions deploy razorpay-webhook --no-verify-jwt`
+   - Put the Project URL and the **anon** key in `www/js/config.js`. Never put the service_role key anywhere in this repo.
+4. **Make yourself owner.** Register in the app, then in the SQL editor: `update public.profiles set role = 'owner' where username = 'your_username';`
+5. **Razorpay.** Sign up and complete KYC (PAN, bank account, this website's terms, privacy, refunds and contact pages). Fill in `site/site-config.js` with your email and phone first: Razorpay checks the contact page.
+   - Supabase > Edge Functions > Secrets: `RAZORPAY_KEY_ID`, `RAZORPAY_KEY_SECRET`, `RAZORPAY_WEBHOOK_SECRET`.
+   - Razorpay Dashboard > Webhooks: URL `https://<project>.supabase.co/functions/v1/razorpay-webhook`, events `payment.captured` and `order.paid`, same webhook secret.
+   - Test with Razorpay test keys first, then switch to live keys.
+6. **Release the Android app.** Bump `VERSION` in `www/js/core.js` and `www/sw.js`, commit, then tag: `git tag v2.1.0 && git push --tags`. The release workflow builds a signed APK, attaches it to GitHub Releases and refreshes the website's download page and `version.json`, which installed apps check to offer the update.
+7. **First gym.** Admin > Create codes (30 free days), give the code to the gym owner, help him register the gym and share his join code.
+
+Free-tier warning: Supabase pauses free projects after a week without activity. Move to the paid plan (about $25 a month) before the first gym depends on it.
+
+## How sync works
+
+Every change saves on the phone first. Changed days and the settings blob are pushed in the background a few seconds later, then anything newer on the server is pulled. A day changed on this phone since the last sync wins over the server copy. Progress photos never leave the phone. Signing out syncs first and refuses to wipe unsynced data without a warning. Signing in on a new phone restores everything except photos.
+
+## Payments
+
+Prices live only in the `products` table on the server. The app asks the server to create a Razorpay order, Razorpay takes the payment, and crystals or the Pass are credited only after the server verifies Razorpay's signature (in `verify-payment`, with `razorpay-webhook` as the backup if the app closed). Crediting is idempotent, so no payment counts twice. Earned crystals are still computed on the phone from training; a tampered phone could fake earned crystals for cosmetics, but never bought crystals, the Pass, or any ranking.
+
+Gym subscriptions are invoiced by you (UPI or a Razorpay payment link). After payment, extend the gym in Admin > Guilds. Leaderboards lock automatically 7 days after `paid_until`.
+
 ## Guild scoring (transparent)
 
-- **Consistency**: planned days trained ÷ planned days so far in the period (at most 6 days per week count).
-- **Strength**: average estimated 1RM of your 3 strongest weighted lifts ÷ bodyweight, where 1.5× = 100; or skill-tree mastery if higher (bodyweight athletes).
+- **Consistency**: planned days trained ÷ planned days so far in the period (at most 6 per week count).
+- **Strength**: average estimated 1RM of your 3 strongest weighted lifts ÷ bodyweight (1.5× = 100), or skill-tree mastery if higher.
 - **Progress**: average estimated-1RM gain against your own previous 4 weeks, capped at 4% a week or 15% a month, plus 10 per skill unlocked in the period.
 - **Overall**: 40% consistency + 30% progress + 30% strength.
 
-Beginners can top Consistency and Progress because both compare you with yourself.
+The server recomputes all four from synced workouts (`compute-scores`) with the same `scoring.js` the app uses. The phone cannot write scores. A user can still log workouts they did not do; that is self-reported training, and guild masters can remove members.
 
-## Guild server setup (Supabase)
-
-1. Create a Supabase project and run `supabase/schema.sql` in its SQL editor.
-2. Authentication > Providers: enable **Anonymous sign-ins**.
-3. Add each partner gym: `insert into public.guilds (code, name, city) values ('YODHA-24', 'Yodha Gym', 'City');`
-4. Put the project URL and anon key in `www/js/config.js`, then `npx cap sync android` and rebuild.
-
-Tested: the SQL was run on PostgreSQL 16 with Supabase's auth functions mocked, and the app's guild client was driven end to end against those real functions (join, wrong code, taken nickname, score submission, leaderboards per category, history, leave and delete). Not tested: a live Supabase project (PostgREST, anonymous sign-in, token refresh). Scores are computed on the phone; the server validates ranges, the overall formula and that only the current period is written, but a modified app could still submit false scores.
-
-## Run and test
+## Run and test locally
 
 ```
-cd www && python3 -m http.server 8765
+cd www && python3 -m http.server 8765                 # offline build at http://localhost:8765
 ```
-Open http://localhost:8765. Use "Try demo data" on the welcome screen to explore with generated workouts (clearly bannered; demo data cannot join a guild). The 3D harness is at http://localhost:8765/dev/viewer.html.
 
-Android APK without Android Studio: push this folder to a private GitHub repo, open Actions, run "Build Android APK", download **ascendant-debug-apk**.
+Full server and account testing without Supabase (needs PostgreSQL 16 and Node 22):
 
-After any change in `www/`: `npx cap sync android`, and bump `VERSION` in `www/js/core.js` and `www/sw.js`.
+```
+cd supabase/test && npm install
+createdb asc_test && psql -d asc_test -f mock_supabase.sql -f ../schema.sql
+PGDATABASE=asc_test node mock-server.mjs &             # mock Supabase on :54321, real Postgres behind it
+PGDATABASE=asc_test node run_tests.mjs                 # 79 server tests
+node e2e_app.cjs                                       # browser test: owner, guild master, participant, new phone (Playwright)
+```
+After editing `www/js/scoring.js`, copy it to `supabase/functions/_shared/scoring.js` (a test fails if they differ).
 
-## Publish on Google Play
+## Known gaps
 
-1. Google Play Console account, Android Studio, `npm install`, `npx cap open android`.
-2. Build > Generate Signed Bundle. Back up the keystore; losing it means you can never update the app.
-3. Integrate Google Play Billing before selling crystals or the Pass.
-4. Privacy policy: training data stays on the phone; guild members share a nickname and four scores.
-
-## For developers: known gaps and next steps
-
-Honest state of the build, in rough priority order:
-
-1. **3D asset weight.** `male.glb` and `female.glb` are about 7.7 MB each, uncompressed, with no LOD. Next step: meshopt or Draco geometry compression and KTX2 textures via `@gltf-transform/cli`, plus the matching decoders in `vendor/three-bundle.js`. Not yet tested on a real mid-range Android phone.
-2. **Character art.** Hair and clothes are procedural shells. Up close the hair reads as a helmet (fade is the weakest), the full beard is mediocre, fingers stay open in every pose, the hoodie has no hood, garments have no wrinkles. Real fixes: MakeHuman CC0 asset packs via `pipeline/extra_assets`, hair cards, or an artist working in Blender.
-3. **Guild server.** `supabase/schema.sql` runs on Postgres 16 and the client was driven end to end against it with mocked Supabase auth, but it has never run on a live Supabase project. Scores are computed on the phone, so a modified client can cheat; server-side recomputation needs log sync.
-4. **Guild features not built:** gym logos (gyms get a letter badge), member profiles, gym achievements, a top-performers page, a gym owner panel, events and posters.
-5. **Payments.** Not connected. Crystal packs and the Pass are test buttons labelled "no charge". Integrate Google Play Billing in `www/js/views.js` (`buy-crystals`, `buy-pass`).
-6. **Hosted previews.** Hosts that refuse `.glb` files can use `config.modelExt = ".glb.json"` with the models wrapped as `{"glb": "<base64>"}` (see `_loadGLB` in `www/js/hunter3d.js`).
-
-### Testing used so far
-
-- `www/dev/viewer.html`: 3D harness, driven by Playwright with SwiftShader WebGL for screenshots.
-- End-to-end browser runs through onboarding, demo data, every tab, logging, PRs, shop purchase, identity redesign, ceremonies and the guild flow, with zero console errors at 360 px and 400 px widths.
-- There is no automated test suite in the repo yet. Adding one (Playwright) is a good first task.
+- Not yet run against a live Supabase project or live Razorpay keys. Everything server-side was tested against real Postgres through a mock of Supabase's HTTP APIs and a fake Razorpay.
+- Not tested on a real Android phone. First 3D load downloads about 7.7 MB per model; no compression or lower-detail models yet.
+- Character art: hair reads as a helmet up close, the full beard is weak, garments have no wrinkles.
+- Razorpay inside the Android app uses Razorpay's web checkout; UPI apps open via QR or UPI ID rather than a one-tap intent. The native Razorpay Android SDK would add one-tap UPI.
+- Account deletion is by request to the owner (the training reset in Settings is self-service).
+- No gym events, posters or member profile pages yet.
 
 ## Licenses
 

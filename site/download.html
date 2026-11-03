@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Download Ascendant</title><meta name="theme-color" content="#0E0F12"><link rel="icon" href="app/icons/icon-192.png"><link rel="stylesheet" href="site.css"></head>
+<body>
+<header class="nav"><div class="wrap"><a class="brand" href="./">Ascendant</a><nav><a href="./#pricing">Pricing</a><a href="contact.html">Contact</a></nav></div></header>
+<main class="wrap doc">
+  <h1>Download Ascendant</h1>
+  <p id="ver" class="upd">Checking the latest version…</p>
+  <div id="dl" style="margin-top:20px"></div>
+  <h2>Install on Android</h2>
+  <ol style="padding-left:20px">
+    <li>Tap the download button and open the file when it finishes.</li>
+    <li>If Android asks, allow your browser to "install unknown apps". This appears because Ascendant is installed from this website, not the Play Store.</li>
+    <li>Tap Install. If Play Protect shows a warning, choose "Install anyway".</li>
+    <li>Open Ascendant and create your account, or sign in.</li>
+  </ol>
+  <div class="callout">Updating: the app tells you when a new version is out. Download it from here and install it over the old one. Your training stays, because it is saved to your account.</div>
+  <h2>iPhone or computer</h2>
+  <p>Open the <a href="app/">web app</a> in Safari or Chrome. On iPhone, tap Share, then "Add to Home Screen".</p>
+  <h2>Need help?</h2>
+  <p>We set you up in person at your gym. See <a href="contact.html">contact</a>.</p>
+</main>
+<footer><div class="wrap"><span>© 2026 Ascendant</span><nav><a href="terms.html">Terms</a><a href="privacy.html">Privacy</a><a href="refunds.html">Refunds</a></nav></div></footer>
+<script>
+fetch("version.json", {cache: "no-store"}).then(r => r.ok ? r.json() : null).catch(() => null).then(v => {
+  const ver = document.getElementById("ver"), dl = document.getElementById("dl");
+  if (!v || !v.apk_url || v.version === "0.0.0") { ver.textContent = "The first Android release is being prepared. Use the web app meanwhile."; dl.innerHTML = '<a class="btn ghost" href="app/">Open the web app</a>'; return; }
+  ver.textContent = "Version " + v.version + (v.date ? ", released " + new Date(v.date).toLocaleDateString("en-IN", {day: "numeric", month: "long", year: "numeric"}) : "") + (v.size_mb ? ", " + v.size_mb + " MB" : "");
+  const a = document.createElement("a"); a.className = "btn"; a.href = v.apk_url; a.textContent = "Download for Android"; dl.appendChild(a);
+  if (v.notes) { const p = document.createElement("p"); p.className = "small mute"; p.style.marginTop = "12px"; p.textContent = v.notes; dl.appendChild(p); }
+});
+</script>
+</body></html>

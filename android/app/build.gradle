@@ -7,8 +7,9 @@ android {
         applicationId "com.ascendant.gym"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 2
-        versionName "2.0.0"
+        // set by the release workflow from the git tag (v2.1.0 -> 20100); defaults for local builds
+        versionCode (System.getenv("ASC_VERSION_CODE") ?: "20100") as int
+        versionName System.getenv("ASC_VERSION_NAME") ?: "2.1.0"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
@@ -16,8 +17,20 @@ android {
             ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
         }
     }
+    signingConfigs {
+        release {
+            // the release workflow writes the keystore from GitHub secrets; never commit a keystore
+            if (System.getenv("ASC_KEYSTORE")) {
+                storeFile file(System.getenv("ASC_KEYSTORE"))
+                storePassword System.getenv("ASC_KEYSTORE_PASSWORD")
+                keyAlias System.getenv("ASC_KEY_ALIAS")
+                keyPassword System.getenv("ASC_KEY_PASSWORD")
+            }
+        }
+    }
     buildTypes {
         release {
+            if (System.getenv("ASC_KEYSTORE")) signingConfig signingConfigs.release
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
         }
