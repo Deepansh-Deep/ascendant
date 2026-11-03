@@ -1,0 +1,11 @@
+{
+  "name": "ascendant-server-tests",
+  "private": true,
+  "type": "module",
+  "description": "Local tests: real Postgres + mock Supabase. See README in this folder.",
+  "scripts": {
+    "mock": "node mock-server.mjs",
+    "test": "node run_tests.mjs"
+  },
+  "dependencies": { "pg": "^8.13.0" }
+}
