@@ -1,0 +1,14 @@
+{
+  "appId": "com.ascendant.gym",
+  "appName": "Ascendant",
+  "webDir": "www",
+  "backgroundColor": "#151A2C",
+  "android": {
+    "allowMixedContent": false
+  },
+  "plugins": {
+    "LocalNotifications": {
+      "iconColor": "#5B8CFF"
+    }
+  }
+}

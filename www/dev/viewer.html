@@ -1,0 +1,13 @@
+<!DOCTYPE html><html><head><meta charset="utf-8"><style>html,body{margin:0;background:#0b0c0e}#v{width:100vw;height:100vh}</style></head>
+<body><div id="v"></div><script type="module">
+import H from '../js/hunter3d.js';
+const q = Object.fromEntries(new URLSearchParams(location.search));
+await H.ready; H.mount(document.getElementById('v'), {mode: q.zoom==='1'?'face':'hero'});
+const look = Object.assign({gender:'male', skin:3, face:'oval', jaw:'', nose:'', build:'', hair:'short', hairColor:'black', brows:'normal', beard:'stubble', eyes:'brown', top:'tee', topColor:'graphite', bottom:'shorts', bottomColor:'onyx', shoes:'trainer', shoesColor:'white', acc:[]}, JSON.parse(q.look||'{}'));
+await H.setLook(look);
+H.setBody(JSON.parse(q.body||'{"level":1,"stages":{}}'));
+if (q.pose) H.setPose(q.pose);
+if (q.view) H.view(q.view);
+if (q.aura) H.setAura(q.aura, +q.lv||0.8);
+setTimeout(()=>{ document.title='ready'; }, +q.wait||2500);
+</script></body></html>

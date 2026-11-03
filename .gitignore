@@ -1,0 +1,13 @@
+node_modules/
+android/app/build/
+android/build/
+android/.gradle/
+android/local.properties
+*.keystore
+*.jks
+*.zip
+.DS_Store
+# character pipeline source data (cloned separately, see pipeline/README.md)
+pipeline/src/
+pipeline/extra_assets/*
+!pipeline/extra_assets/.gitkeep
