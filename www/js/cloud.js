@@ -69,10 +69,18 @@ const Cloud = {
 async function refreshAccount(){
   if (!CLOUD_ON || !Cloud.session || !S || S.demo) return null;
   const a = await Cloud.rpc("my_account");
-  S.cloudAcct = {id: a.id, username: a.username, display_name: a.display_name, role: a.role, membership: a.membership, master_guild: a.master_guild, at: Date.now()};
+  S.cloudAcct = {id: a.id, username: a.username, display_name: a.display_name, role: a.role, membership: a.membership, master_guild: a.master_guild, level: a.level, hasAvatar: !!a.avatar, at: Date.now()};
   Sync.quietSave(); return a;
 }
 const acct = () => (S && S.cloudAcct) || null;
+/* profile photo and level for leaderboards and member lists: pushed only when they change */
+async function pushCard(){
+  if (!CLOUD_ON || !Cloud.session || !S || S.demo) return;
+  const sy = S.sync = S.sync || {}, lv = compute().level, ph = S.profile.photo || "";
+  if (sy.level !== lv){ await Cloud.rpc("set_my_level", {p_level: lv}); sy.level = lv; }
+  const h = Sync.hash(ph);
+  if (sy.avatarH !== h){ await Cloud.rpc("set_my_avatar", {p_avatar: ph ? await avatarData(ph) : null}); sy.avatarH = h; }
+}
 const role = () => (acct() && acct().role) || "participant";
 
 /* ---------------- offline-first sync ----------------
@@ -118,6 +126,7 @@ const Sync = {
       }
       sy.lastPull = pr.now; sy.at = Date.now();
       this.quietSave(); this.status = "ok"; this.lastError = null;
+      await pushCard();
       if (pushedDays || applied || !UI.scoredToday){ UI.scoredToday = true; Cloud.fn("compute-scores").catch(() => {}); }
       if (applied && !UI.onb && !UI.editKey) render();
       return true;

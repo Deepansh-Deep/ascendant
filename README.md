@@ -1,4 +1,4 @@
-# Ascendant 3.1
+# Ascendant 3.3
 
 A gym tracker built as a fitness RPG. You log real sets, earn XP, rank up, and your hunter's aura grows with your training. Your gym's guild ranks members fairly.
 
@@ -90,7 +90,7 @@ Everything below is a one-time setup only you can do, because it needs your acco
 3. **Create the Supabase project** (supabase.com, free to start, Mumbai region).
    - SQL editor: run `supabase/schema.sql`, then `supabase/storage.sql`.
    - Authentication > Providers > Email: turn **off** "Confirm email" (usernames map to hidden addresses that cannot receive mail).
-   - Deploy the functions with the Supabase CLI: `supabase functions deploy compute-scores upload-logo owner-admin`
+   - Server functions (leaderboard scoring, gym logo upload, owner password reset) are deployed by GitHub: create a token at supabase.com > Account > Access Tokens, save it as the repository secret `SUPABASE_ACCESS_TOKEN`, then Actions > "Deploy server functions" > Run workflow. It also redeploys on every change under `supabase/functions/`. They are deployed with `--no-verify-jwt` because each function checks the user's token itself, and the platform check does not work with Supabase's new signing keys. `_shared/util.js` reads the new `SUPABASE_SECRET_KEYS` / `SUPABASE_PUBLISHABLE_KEYS` and falls back to the legacy keys.
    - Put the Project URL and the **anon** key in `www/js/config.js`. Never put the service_role key anywhere in this repo.
 4. **Make yourself owner.** Register in the app, then in the SQL editor: `update public.profiles set role = 'owner' where username = 'your_username';`
 5. **Contact details.** Fill in `site/site-config.js` with your email and phone.
@@ -166,3 +166,12 @@ Re-run `supabase/schema.sql` in the SQL editor after pulling this version. It is
 - **Rank name glow**: `.glow[data-rank]`, stronger at every rank from E to S. The Ranks list in Settings previews each one.
 - **Charged hunter**: after a saved workout the Home hunter's aura is charged for the rest of the day and flares once (`setCharged`, `burst` in `hero2d.js`).
 - Sounds are synthesised (`synth()` in `core.js`), no audio files.
+
+## Profile photo, rank ring and outfit unlocks (3.3)
+
+- Optional profile photo (Settings > Edit profile, or tap your ring on Home). A 160 px JPEG copy is stored in `profiles.avatar` with `profiles.level` (`set_my_avatar`, `set_my_level`), pushed by `pushCard()` in `cloud.js` only when they change.
+- `avatarRing()` in `ui.js` draws the photo (or initial) inside a ring coloured by rank, with the rank letter; from rank A it glows. Used on Home, Settings, leaderboards, join requests, member lists and the owner's user list. Works the same for solo hunters and guild members.
+- Level on the server is cosmetic (ring colour only) and reported by the phone; rankings still come from server-computed scores.
+- Guild masters can remove a member's photo, the owner can remove anyone's (`master_clear_avatar`, `owner_clear_avatar`, logged).
+- Outfits unlock by level: Signature from the start, Urban at level 10, Royal at level 25 (`OUTFIT_LEVEL` in `ui.js`), with an unlock ceremony. The character art itself is frozen.
+- After pulling 3.3, re-run `supabase/schema.sql` in the SQL editor (safe to run again).

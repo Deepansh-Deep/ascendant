@@ -28,6 +28,9 @@ create table if not exists public.profiles (
   created_at   timestamptz not null default now(),
   last_seen    timestamptz
 );
+-- 3.3: optional profile photo (small JPEG data URL, about 10 KB) and level, shown with the rank ring
+alter table public.profiles add column if not exists avatar text check (avatar is null or length(avatar) <= 60000);
+alter table public.profiles add column if not exists level int not null default 1 check (level between 1 and 999);
 
 create table if not exists public.guilds (
   id         uuid primary key default gen_random_uuid(),
@@ -224,7 +227,7 @@ begin
   select * into mg from public.guilds where master_id = p.id;
   select * into w from public.wallets where user_id = p.id;
   return json_build_object(
-    'id', p.id, 'username', p.username, 'display_name', p.display_name, 'role', p.role,
+    'id', p.id, 'username', p.username, 'display_name', p.display_name, 'role', p.role, 'avatar', p.avatar, 'level', p.level,
     'membership', case when m.user_id is null then null else json_build_object(
       'status', m.status, 'guild_id', g.id, 'guild_name', g.name, 'city', g.city, 'logo_url', g.logo_url,
       'active', public._guild_active(g)) end,
@@ -285,21 +288,23 @@ begin
   return jc;
 end $$;
 
+drop function if exists public.master_requests();
 create or replace function public.master_requests()
-returns table (user_id uuid, username text, display_name text, requested_at timestamptz)
+returns table (user_id uuid, username text, display_name text, requested_at timestamptz, avatar text, level int)
 language sql stable security definer set search_path = public as $$
-  select m.user_id, p.username, p.display_name, m.requested_at
+  select m.user_id, p.username, p.display_name, m.requested_at, p.avatar, p.level
   from public.memberships m join public.profiles p on p.id = m.user_id
   where m.guild_id = (public._master_guild()).id and m.status = 'pending'
   order by m.requested_at
 $$;
 
+drop function if exists public.master_members();
 create or replace function public.master_members()
-returns table (user_id uuid, username text, display_name text, joined_at timestamptz, week_overall int, last_seen timestamptz)
+returns table (user_id uuid, username text, display_name text, joined_at timestamptz, week_overall int, last_seen timestamptz, avatar text, level int)
 language sql stable security definer set search_path = public as $$
   select m.user_id, p.username, p.display_name, coalesce(m.decided_at, m.requested_at),
     (select s.overall from public.user_scores s where s.user_id = m.user_id and s.period = 'week' and s.period_key = public._period_key('week'))::int,
-    p.last_seen
+    p.last_seen, p.avatar, p.level
   from public.memberships m join public.profiles p on p.id = m.user_id
   where m.guild_id = (public._master_guild()).id and m.status = 'approved'
   order by p.username
@@ -390,8 +395,9 @@ begin
 end $$;
 
 -- ---------------------------------------------------------------- leaderboards
+drop function if exists public.guild_leaderboard(text, text, uuid);
 create or replace function public.guild_leaderboard(p_category text, p_period text, p_guild uuid default null)
-returns table (rank int, user_id uuid, username text, display_name text, score int, is_me boolean, member_count int)
+returns table (rank int, user_id uuid, username text, display_name text, score int, is_me boolean, member_count int, avatar text, level int)
 language plpgsql stable security definer set search_path = public as $$
 #variable_conflict use_column
 declare p public.profiles := public._me(); gid uuid; g public.guilds; pk text := public._period_key(p_period);
@@ -405,12 +411,12 @@ begin
     with members as (
       select m.user_id from public.memberships m where m.guild_id = gid and m.status = 'approved'),
     s as (
-      select mb.user_id as uid, pr.username as un, pr.display_name as dn,
+      select mb.user_id as uid, pr.username as un, pr.display_name as dn, pr.avatar as av, pr.level as lv,
         coalesce((case p_category when 'consistency' then sc.consistency when 'strength' then sc.strength
                                   when 'progress' then sc.progress else sc.overall end)::int, 0) as val
       from members mb join public.profiles pr on pr.id = mb.user_id
       left join public.user_scores sc on sc.user_id = mb.user_id and sc.period = p_period and sc.period_key = pk)
-    select (rank() over (order by s.val desc))::int, s.uid, s.un, s.dn, s.val, s.uid = p.id, (select count(*)::int from members)
+    select (rank() over (order by s.val desc))::int, s.uid, s.un, s.dn, s.val, s.uid = p.id, (select count(*)::int from members), s.av, s.lv
     from s order by 1, 3 limit 300;
 end $$;
 
@@ -490,13 +496,14 @@ begin
   if not found then raise exception 'Guild not found'; end if;
 end $$;
 
+drop function if exists public.owner_users(text);
 create or replace function public.owner_users(p_search text)
-returns table (id uuid, username text, display_name text, role text, guild_name text, membership text, created_at timestamptz, last_seen timestamptz, bought int, pass boolean)
+returns table (id uuid, username text, display_name text, role text, guild_name text, membership text, created_at timestamptz, last_seen timestamptz, bought int, pass boolean, avatar text, level int)
 language plpgsql stable security definer set search_path = public as $$
 #variable_conflict use_column
 begin
   perform public._require_owner();
-  return query select p.id, p.username, p.display_name, p.role, g.name, m.status, p.created_at, p.last_seen, w.bought, w.pass
+  return query select p.id, p.username, p.display_name, p.role, g.name, m.status, p.created_at, p.last_seen, w.bought, w.pass, p.avatar, p.level
     from public.profiles p left join public.memberships m on m.user_id = p.id left join public.guilds g on g.id = m.guild_id
     left join public.wallets w on w.user_id = p.id
     where coalesce(p_search, '') = '' or p.username like '%' || lower(btrim(p_search)) || '%' or p.display_name ilike '%' || btrim(p_search) || '%'
@@ -673,11 +680,48 @@ begin
   return query select l.action, l.target_name, l.detail, l.created_at from public.owner_log l order by l.created_at desc limit 50;
 end $$;
 
+-- ---------------------------------------------------------------- profile photo and level (3.3)
+create or replace function public.set_my_avatar(p_avatar text)
+returns void language plpgsql security definer set search_path = public as $$
+begin
+  perform public._me();
+  if p_avatar is not null and p_avatar <> '' then
+    if length(p_avatar) > 60000 then raise exception 'Photo is too large'; end if;
+    if p_avatar !~ '^data:image/(jpeg|webp|png);base64,[A-Za-z0-9+/=]+$' then raise exception 'Photo must be a JPEG, WebP or PNG image'; end if;
+  end if;
+  update public.profiles set avatar = nullif(p_avatar, '') where id = auth.uid();
+end $$;
+
+-- level is cosmetic (it only colours the rank ring); rankings come from server-computed scores
+create or replace function public.set_my_level(p_level int)
+returns void language plpgsql security definer set search_path = public as $$
+begin
+  perform public._me();
+  update public.profiles set level = greatest(1, least(coalesce(p_level, 1), 999)) where id = auth.uid();
+end $$;
+
+create or replace function public.master_clear_avatar(p_user uuid)
+returns void language plpgsql security definer set search_path = public as $$
+begin
+  if not exists (select 1 from public.memberships where user_id = p_user and guild_id = (public._master_guild()).id) then
+    raise exception 'Not a member of your guild'; end if;
+  update public.profiles set avatar = null where id = p_user;
+end $$;
+
+create or replace function public.owner_clear_avatar(p_user uuid)
+returns void language plpgsql security definer set search_path = public as $$
+declare t public.profiles;
+begin
+  perform public._require_owner();
+  update public.profiles set avatar = null where id = p_user returning * into t;
+  if found then insert into public.owner_log (owner_id, action, target_id, target_name) values (auth.uid(), 'clear_avatar', p_user, t.username); end if;
+end $$;
+
 -- ---------------------------------------------------------------- grants
 revoke all on all functions in schema public from public, anon, authenticated;
 grant execute on function public.username_available(text), public.check_master_code(text) to anon, authenticated;
 grant execute on function
-  public.my_account(), public.update_display_name(text),
+  public.my_account(), public.update_display_name(text), public.set_my_avatar(text), public.set_my_level(int), public.master_clear_avatar(uuid), public.owner_clear_avatar(uuid),
   public.become_guild_master(text, text, text), public.master_update_guild(text, text), public.master_regen_join_code(),
   public.master_requests(), public.master_members(), public.master_decide(uuid, boolean), public.master_remove(uuid),
   public.request_join(text), public.leave_guild(),

@@ -33,7 +33,7 @@ async function mountStage(){
   const fail = msg => { el.innerHTML = `<div class="stage-fallback">${hexBadge(S && !UI.onb ? compute().rank[1] : "E", 76)}<p>${msg}</p></div>`; };
   if (!Hero2D.supported) return fail("This phone cannot draw the hunter. Training, XP and rankings work normally.");
   const opts = JSON.parse(el.dataset.stage || "{}");
-  const o = {hero: opts.hero || heroOf(), outfit: UI.onb ? "signature" : (S && S.outfit) || "signature", rank: "E", power: .25, charged: false, still: !!opts.still};
+  const o = {hero: opts.hero || heroOf(), outfit: UI.onb || !S ? "signature" : outfitOpen(S.outfit || "signature", compute().level) ? S.outfit || "signature" : "signature", rank: "E", power: .25, charged: false, still: !!opts.still};
   if (S && !UI.onb && !UI.auth){ const C = compute(); o.rank = C.rank[1]; o.power = C.aura; o.charged = trainedToday() && UI.tab === "home"; }
   try {
     await Hero2D.mount(el, o);
@@ -63,7 +63,7 @@ function viewHome(C){
     ${hunterStage("hero-stage", {mode:"hero", interactive:true})}
     <button class="stage-cta" data-act="tab" data-v="hunter">Aura ${Math.round(C.aura * 100)}%</button>
     <div class="hero-info">
-      <div class="hero-id">${hexBadge(C.rank[1], 54, "rank")}
+      <div class="hero-id"><button class="ring-btn" data-act="photo" aria-label="${S.profile.photo ? "Change" : "Add"} profile photo">${avatarRing(S.profile.photo, S.hunterName || S.profile.name, C.level, 58)}</button>
         <div class="hid"><div class="h-name"><span class="glow" data-rank="${C.rank[1]}">${esc(S.hunterName || S.profile.name)}</span></div><div class="h-user">@${esc(S.profile.name)}</div><div class="h-tags"><span>${C.rank[2]} rank</span><span>${AURA_NAME[C.rank[1]]}</span>${doneToday ? `<span class="charged">Charged</span>` : ""}</div></div></div>
       <div class="lvl-row"><span class="lvl">Level <b class="num">${C.level}</b></span><span class="xp num">${nf(C.into)} / ${nf(C.need)} XP</span></div>
       <div class="xpbar" role="progressbar" aria-valuenow="${xpPct}" aria-valuemin="0" aria-valuemax="100"><i style="width:${xpPct}%"></i></div>
@@ -258,9 +258,9 @@ function panelAura(C){
     <div class="line"><span>Base</span><span class="num"><b>${Math.round(AURA_BASE * 100)}</b> <span class="tiny mute">/ ${Math.round(AURA_BASE * 100)}</span></span></div></section>
   <section class="card">${secH("Aura by rank", nr ? `<span class="tiny mute">${nr[2]} at level ${nr[0]}</span>` : "")}
     <div class="aura-ranks">${RANKS.map(r => `<div class="ar ${C.level >= r[0] ? "got" : ""} ${C.rank[0] === r[0] ? "cur" : ""}" style="--ac:${Hero2D.PALETTES[r[1]].main}"><i></i><b>${r[1]}</b><span>${AURA_NAME[r[1]]}</span></div>`).join("")}</div></section>
-  <section class="card"><div class="row between gap"><div class="grow"><h3>Your hunter</h3><div class="tiny mute">Hunter and outfit are free to switch any time.</div></div>
+  <section class="card"><div class="row between gap"><div class="grow"><h3>Your hunter</h3><div class="tiny mute">Switch hunter any time. New outfits unlock at level 10 and level 25.</div></div>
     <div class="seg mini">${HEROES.map(([k, n]) => `<button class="${(S.hero || "male") === k ? "on" : ""}" data-act="set-hero" data-v="${k}">${n}</button>`).join("")}</div></div>
-    <div class="sub-h">Outfit</div><div class="outfits">${OUTFIT_NAMES.map(([k, n]) => `<button class="of ${(S.outfit || "signature") === k ? "on" : ""}" data-act="set-outfit" data-v="${k}" aria-pressed="${(S.outfit || "signature") === k}"><img src="${heroImg(S.hero, k)}" alt="" loading="lazy"><span>${n}</span></button>`).join("")}</div>
+    <div class="sub-h">Outfit</div><div class="outfits">${OUTFIT_NAMES.map(([k, n]) => `<button class="of ${(S.outfit || "signature") === k ? "on" : ""} ${outfitOpen(k, C.level) ? "" : "locked"}" data-act="set-outfit" data-v="${k}" aria-pressed="${(S.outfit || "signature") === k}"><img src="${heroImg(S.hero, k)}" alt="" loading="lazy"><span>${n}</span>${outfitOpen(k, C.level) ? "" : `<em>Level ${OUTFIT_LEVEL[k]}</em>`}</button>`).join("")}</div>
     <div class="opt"><label class="opt-l" for="hn">Hunter name</label><input id="hn" class="input" maxlength="18" data-hn value="${esc(S.hunterName || "")}" placeholder="${esc(S.profile.name)}"></div></section>`;
 }
 function panelMuscles(C){
@@ -331,7 +331,7 @@ function viewSettings(C){
   const plan = planOn(TODAY()), st = S.settings, native = !!nativeLN();
   return `<div class="page-h"><button class="iconbtn" data-act="tab" data-v="home" aria-label="Back">${ICON.left}</button><h1>Plan and settings</h1></div>
   ${accountCard()}
-  <section class="card row gap"><div class="ava">${S.profile.photo ? `<img src="${S.profile.photo}" alt="">` : esc((S.profile.name || "?")[0].toUpperCase())}</div><div class="grow"><h3>@${esc(S.profile.name)}</h3>
+  <section class="card row gap">${avatarRing(S.profile.photo, S.profile.name, C.level, 54)}<div class="grow"><h3>@${esc(S.profile.name)}</h3>
     <div class="tiny mute">${S.profile.height || "?"} cm, goal ${S.profile.goal} kg, since ${fmt(fromKey(S.profile.startDate), {day:"numeric", month:"short", year:"numeric"})}</div></div><button class="btn sm ghost" data-act="edit-profile">Edit</button></section>
   ${secH("Theme")}<div class="chips">${THEMES.map(([k, n, c]) => `<button class="chip theme-chip ${(S.theme || "gold") === k ? "on" : ""}" data-act="set-theme" data-v="${k}"><i style="--c:${c}"></i>${n}</button>`).join("")}</div>
   ${secH("Font", `<span class="tiny mute">Changes the whole app</span>`)}<div class="ftiles">${FONTS.map(f => `<button class="ftile ${fontKey() === f[0] ? "on" : ""}" data-font="${f[0]}" data-act="set-font" data-v="${f[0]}" aria-pressed="${fontKey() === f[0]}"><b>${f[1]}</b><span>${f[2]}</span><i>Level 24, 1,280 XP</i></button>`).join("")}</div>
@@ -429,6 +429,11 @@ function cineImpact(col, big, onHit){
 function ceremony(p){
   FX.clear();
   if (p.reward) return rewardCeremony(p.reward);
+  if (p.outfit){ const nm = (OUTFIT_NAMES.find(o => o[0] === p.outfit) || [, "New"])[1], col = FX.accent();
+    $("#cer").innerHTML = `<div class="cer cine big" role="dialog" aria-modal="true" style="--cc:${col}"><div class="cine-veil"></div><div class="cine-core">
+      <div class="cine-emb"><div class="cine-rays"></div><img class="cer-outfit" src="${heroImg(S.hero, p.outfit)}" alt=""></div><div class="k">Outfit unlocked</div><div class="cer-t">${nm}</div><p>Reached level ${OUTFIT_LEVEL[p.outfit]}. Wear it now or change any time in the Hunter tab.</p></div>
+      <div class="grid2 cine-go"><button class="btn ghost" data-act="cer-close">Later</button><button class="btn" data-act="wear-outfit" data-v="${p.outfit}">Wear it</button></div></div>`;
+    if (!FX.reduced) cineImpact(col, true); else SFX.level(); return; }
   const emb = h => `<div class="cine-emb"><div class="cine-rays"></div>${h}</div>`;
   let inner, col = FX.accent(), big = false, onHit = null;
   if (p.skill){ const u = p.skill; inner = `${emb(hexBadge("★", 116, "cer-hex"))}<div class="k">Skill unlocked</div><div class="cer-t">${esc(nodeLabel(u.ex, u.target))}</div><p>+${XP.skill} XP.</p>`; }
@@ -468,7 +473,7 @@ async function makeCard(kind){
   x.textAlign = "center"; x.fillStyle = v("--acc"); x.font = `600 30px ${DF}`; x.fillText("Ascendant", W / 2, 96);
   let g, lw, wk;
   if (kind === "week"){ wk = addDays(mondayOf(todayD()), -7); lw = weekStats(C, wk); g = gradeOf(lw); }
-  const art = kind !== "week" ? await Hero2D.art(S.hero, S.outfit).catch(() => null) : null;
+  const art = kind !== "week" ? await Hero2D.art(S.hero, outfitOpen(S.outfit, C.level) ? S.outfit : "signature").catch(() => null) : null;
   if (art){ const ac = Hero2D.PALETTES[C.rank[1]].main, gl = x.createRadialGradient(W / 2, 640, 40, W / 2, 640, 520); gl.addColorStop(0, ac + "66"); gl.addColorStop(1, ac + "00"); x.fillStyle = gl; x.fillRect(0, 120, W, 900);
     x.drawImage(art, W / 2 - 300, 130, 600, 900); }
   if (!art){ x.fillStyle = v("--ink"); x.font = `700 ${kind === "week" ? 360 : 300}px ${NF}`; x.fillText(kind === "week" ? g : C.rank[1], W / 2, 640); }
@@ -544,7 +549,9 @@ document.addEventListener("click", async e => {
     case "htab": UI.tab = "hunter"; UI.htab = v; render(); return;
     case "open-badges": UI.tab = "hunter"; UI.htab = "badges"; render(); scrollTo(0, 0); return;
     case "set-hero": S.hero = v; save(); render(); return;
-    case "set-outfit": S.outfit = v; save(); render(); return;
+    case "set-outfit": { const lv = compute().level; if (!outfitOpen(v, lv)) return toast(`Unlocks at level ${OUTFIT_LEVEL[v]}. You are level ${lv}.`); S.outfit = v; save(); render(); return; }
+    case "del-avatar": S.profile.photo = null; save(); closeModal(); render(); toast("Photo removed"); return;
+    case "wear-outfit": S.outfit = v; save(); FX.clear(); $("#cer").innerHTML = ""; render(); nextCeremony(); toast("Outfit equipped"); return;
     case "set-theme": S.theme = v; save(); render(); return;
     case "onb-hero": UI.onb.hero = v; renderOnboarding(); return;
     case "go-today": { if (UI.editKey) return toast("Save or discard your log edit first"); goDay(TODAY()); render(); scrollTo(0, 0);
@@ -608,6 +615,8 @@ document.addEventListener("click", async e => {
     case "rest-len": S.settings.rest = +v; save(); render(); return;
     case "sound": S.settings.sound = !S.settings.sound; save(); render(); return;
     case "edit-profile": { const p = S.profile; modal(`<h2>Edit profile</h2>
+      <div class="row gap">${avatarRing(p.photo, p.name, compute().level, 64)}<div class="grow"><b>Profile photo</b><div class="tiny mute">Optional. ${CLOUD_ON ? "Shown with your rank ring on your profile and on guild leaderboards." : "Shown with your rank ring."}</div>
+        <div class="row gap"><button class="btn sm ghost" data-act="photo">${p.photo ? "Change" : "Add photo"}</button>${p.photo ? `<button class="btn sm quiet" data-act="del-avatar">Remove</button>` : ""}</div></div></div>
       <label class="lab" for="en">Username</label><input id="en" class="input" maxlength="20" value="${esc(p.name)}">
       <label class="lab" for="ehn">Hunter name</label><input id="ehn" class="input" maxlength="18" value="${esc(S.hunterName || "")}">
       <div class="grid2"><div><label class="lab" for="eh">Height (cm)</label><input id="eh" class="input" inputmode="numeric" value="${p.height || ""}"></div><div><label class="lab" for="eg">Goal weight (kg)</label><input id="eg" class="input" inputmode="decimal" value="${p.goal}"></div></div>
@@ -664,7 +673,7 @@ function readImage(file, size, ratio, cb){
     const sr = Math.min(img.width / w, img.height / h), sw = w * sr, sh = h * sr; c.getContext("2d").drawImage(img, (img.width - sw) / 2, (img.height - sh) / 2, sw, sh, 0, 0, w, h); cb(c.toDataURL("image/jpeg", .78)); }; img.src = r.result; };
   r.readAsDataURL(file);
 }
-$("#photo").addEventListener("change", e => { const f = e.target.files[0]; if (!f) return; readImage(f, 240, 1, url => { if (UI.onb){ UI.onb.photo = url; renderOnboarding(); } else { S.profile.photo = url; save(); render(); } }); e.target.value = ""; });
+$("#photo").addEventListener("change", e => { const f = e.target.files[0]; if (!f) return; readImage(f, 240, 1, url => { if (UI.onb){ UI.onb.photo = url; renderOnboarding(); } else { S.profile.photo = url; save(); closeModal(); render(); toast("Profile photo updated"); } }); e.target.value = ""; });
 $("#progress").addEventListener("change", e => { const f = e.target.files[0]; if (!f) return; readImage(f, 480, 4 / 3, url => { const t = TODAY(); S.photos = S.photos.filter(p => p.date !== t); S.photos.push({date:t, img:url, kg:currentWeight()}); S.photos.sort((a, b) => a.date < b.date ? -1 : 1); if (save()) toast("Progress photo saved"); render(); }); e.target.value = ""; });
 $("#restore").addEventListener("change", e => { const f = e.target.files[0]; if (!f) return; const r = new FileReader(); r.onload = () => restoreFrom(String(r.result)); r.readAsText(f); e.target.value = ""; });
 document.addEventListener("visibilitychange", () => { if (!document.hidden && S && !UI.onb && !document.activeElement.matches("input,textarea,select")) render(); });

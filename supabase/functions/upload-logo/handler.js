@@ -1,6 +1,6 @@
 // Guild masters upload their gym logo. Only the master of a guild can set its logo.
 // Requires a PUBLIC storage bucket named "guild-logos" (see supabase/storage.sql).
-import { json, fail, getUser, rpc, cors, body } from "../_shared/util.js";
+import { json, fail, getUser, rpc, cors, body, adminHeaders } from "../_shared/util.js";
 const TYPES = { "image/png": "png", "image/jpeg": "jpg", "image/webp": "webp" };
 
 export default async function handler(req, env) {
@@ -16,7 +16,7 @@ export default async function handler(req, env) {
   const path = `${guild.id}/logo-${Date.now()}.${TYPES[m[1]]}`;
   const up = await fetch(`${env.SUPABASE_URL}/storage/v1/object/guild-logos/${path}`, {
     method: "POST",
-    headers: { Authorization: "Bearer " + env.SUPABASE_SERVICE_ROLE_KEY, apikey: env.SUPABASE_SERVICE_ROLE_KEY, "Content-Type": m[1], "x-upsert": "true" },
+    headers: adminHeaders(env, { "Content-Type": m[1], "x-upsert": "true" }),
     body: bytes
   });
   if (!up.ok) return fail("Upload failed: " + (await up.text()).slice(0, 120), 502);

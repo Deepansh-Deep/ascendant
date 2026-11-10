@@ -163,6 +163,18 @@ ok((await rpc("request_join", { p_join_code: JOIN }, p1T)).ok && (await rpc("lea
 const direct = await call("POST", "/rest/v1/rpc/_master_guild", {}, p1T); ok(!direct.ok, "internal helper functions are not callable", direct.data);
 const adm = await rpc("admin_mark_paid", { p_order_id: ord.data.order_id, p_payment_id: "x" }, p1T); ok(!adm.ok, "app users cannot call admin functions", adm.data);
 
+// ---------- 9c. profile photo and level (3.3)
+console.log("profile photo");
+const PIX = "data:image/jpeg;base64," + "A".repeat(400);
+ok((await rpc("set_my_avatar", { p_avatar: PIX }, p2T)).ok && (await rpc("set_my_level", { p_level: 14 }, p2T)).ok, "member sets photo and level");
+const acc2 = (await rpc("my_account", {}, p2T)).data; ok(acc2.avatar === PIX && acc2.level === 14, "my_account returns photo and level", acc2.level);
+ok(!(await rpc("set_my_avatar", { p_avatar: "javascript:alert(1)" }, p2T)).ok, "non-image photo rejected");
+ok(!(await rpc("set_my_avatar", { p_avatar: "data:image/jpeg;base64," + "A".repeat(70000) }, p2T)).ok, "oversized photo rejected");
+ok((await rpc("set_my_level", { p_level: 99999 }, p2T)).ok && (await rpc("my_account", {}, p2T)).data.level === 999, "level is clamped");
+ok(!(await rpc("owner_clear_avatar", { p_user: r2.user_id }, p2T)).ok, "members cannot clear photos with owner tools");
+ok((await rpc("owner_clear_avatar", { p_user: r2.user_id }, ownerT)).ok && (await rpc("my_account", {}, p2T)).data.avatar === null, "owner removes a photo");
+ok((await rpc("set_my_avatar", { p_avatar: "" }, p2T)).ok, "empty photo clears it");
+
 // ---------- 9b. owner tools: crystals, deletes, audit log
 console.log("owner tools");
 ok(!(await rpc("owner_grant_crystals", { p_user: r1.user_id, p_amount: 10, p_reason: "x" }, p2T)).ok, "participant cannot grant crystals");

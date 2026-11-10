@@ -8,6 +8,9 @@ const RARITY = {common:{n:"Common", c:"var(--r-common)"}, rare:{n:"Rare", c:"var
 /* the two playable characters; art lives in assets/hero/<key>.png */
 const HEROES = [["male", "Hunter", "He"], ["female", "Huntress", "She"]];
 const OUTFIT_NAMES = [["signature", "Signature"], ["urban", "Urban"], ["royal", "Royal"]];
+/* outfits unlock with level; the Signature outfit is there from day one */
+const OUTFIT_LEVEL = {signature: 1, urban: 10, royal: 25};
+const outfitOpen = (k, level) => level >= (OUTFIT_LEVEL[k] || 1);
 const heroImg = (hero, outfit) => `assets/hero/${hero === "female" ? "female" : "male"}_${outfit || "signature"}.webp`;
 
 /* ---------------- aura: earned, never bought ----------------
@@ -145,3 +148,19 @@ const FONTS = [["default", "Ascendant", "Sora with Inter"], ["inter", "Inter", "
   ["grotesk", "Space Grotesk", "Technical with character"], ["rajdhani", "Rajdhani", "Squared, HUD style"], ["oxanium", "Oxanium", "Game interface"], ["exo", "Exo 2", "Sci-fi, wide"],
   ["orbitron", "Orbitron", "Futuristic headings"], ["chakra", "Chakra Petch", "Angular, tactical"], ["cinzel", "Cinzel", "Carved, regal headings"], ["iron", "Barlow", "Condensed, athletic"], ["system", "JetBrains Mono", "Terminal headings"]];
 const fontKey = () => { const f = S && S.settings && S.settings.font; return FONTS.some(x => x[0] === f) ? f : "default"; };
+
+/* ---------------- profile photo with rank ring ----------------
+   Same for solo hunters and guild members. The ring takes the rank's aura colour; from rank A it glows. */
+const RING_GLOW = new Set(["A", "S", "SS", "SSS", "ASC"]);
+function avatarRing(photo, name, level, size = 44, cls = ""){
+  const r = rankOf(Math.max(1, level || 1)), pal = (typeof Hero2D !== "undefined" && Hero2D.PALETTES[r[1]]) || {main: "#9FB4D6", core: "#fff"};
+  const inner = photo ? `<img src="${esc(photo)}" alt="" loading="lazy">` : `<b>${esc(((name || "?").trim()[0] || "?").toUpperCase())}</b>`;
+  return `<span class="aring ${RING_GLOW.has(r[1]) ? "glow-ring" : ""} ${cls}" style="--s:${size}px;--rc:${pal.main};--rc2:${pal.core}" title="Rank ${r[1]}, level ${level || 1}">
+    <span class="aring-in">${inner}</span><i class="aring-rk">${r[1]}</i></span>`;
+}
+/* shrink a photo to a small square JPEG for the server (about 10 KB) */
+function avatarData(url){
+  return new Promise(res => { const im = new Image(); im.onload = () => { const c = document.createElement("canvas"); c.width = c.height = 160;
+    const s = Math.min(im.width, im.height); c.getContext("2d").drawImage(im, (im.width - s) / 2, (im.height - s) / 2, s, s, 0, 0, 160, 160);
+    res(c.toDataURL("image/jpeg", .8)); }; im.onerror = () => res(null); im.src = url; });
+}

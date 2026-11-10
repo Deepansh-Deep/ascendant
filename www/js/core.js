@@ -1,6 +1,6 @@
 "use strict";
 /* ===== CONSTANTS ===== */
-const VERSION = "3.2.0";
+const VERSION = "3.3.0";
 const MUSCLES = ["Chest","Back","Shoulders","Biceps","Triceps","Legs","Abs","Cardio"];
 const OPTIONS = {
   Chest:["Bench Press","Incline Dumbbell Press","Chest Press Machine","Pec Deck Fly","Cable Crossover","Push-ups"],
@@ -360,7 +360,8 @@ function queueCeremonies(_before, C){
   if (!S.seen) S.seen = {level:C.level, skills:C.skills.unlocked.map(skId)};
   const q = [], newSkills = C.skills.unlocked.filter(u => !S.seen.skills.includes(skId(u)));
   newSkills.forEach(u => q.push({skill:u}));
-  if (C.level > S.seen.level) q.push({level:C.level, prevLevel:S.seen.level, rank:C.rank, prevRank:rankOf(S.seen.level)});
+  if (C.level > S.seen.level){ q.push({level:C.level, prevLevel:S.seen.level, rank:C.rank, prevRank:rankOf(S.seen.level)});
+    for (const k in OUTFIT_LEVEL) if (OUTFIT_LEVEL[k] > 1 && S.seen.level < OUTFIT_LEVEL[k] && C.level >= OUTFIT_LEVEL[k]) q.push({outfit:k}); }
   S.seen = {level:Math.max(S.seen.level, C.level), skills:C.skills.unlocked.map(skId)}; save();
   UI.queue = (UI.queue||[]).concat(q);
   return newSkills;

@@ -119,6 +119,7 @@ const tab = (p, t) => click(p, `[data-act=tab][data-v=${t}]`);
   const rows = await r.$$eval('.board li', ls => ls.map(l => l.innerText.replace(/\s+/g, ' ')));
   ok(rows.length === 2 && rows.some(t => t.includes('Rahul Kumar')), 'participant sees live leaderboard with both members', JSON.stringify(rows));
   ok(/Your position/.test(await textOf(r, '.me-pos')), 'personal position shown');
+  ok(await r.$$eval('.board .aring', n => n.length) === 2, 'every leaderboard row shows a rank ring');
   await click(r, '[data-act=gcat][data-v=strength]'); await r.waitForSelector('.board li', { timeout: 15000 }); ok(true, 'switching category loads that board');
 
   console.log('no shop');
