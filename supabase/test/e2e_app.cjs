@@ -121,14 +121,12 @@ const tab = (p, t) => click(p, `[data-act=tab][data-v=${t}]`);
   ok(/Your position/.test(await textOf(r, '.me-pos')), 'personal position shown');
   await click(r, '[data-act=gcat][data-v=strength]'); await r.waitForSelector('.board li', { timeout: 15000 }); ok(true, 'switching category loads that board');
 
-  console.log('purchase');
-  await tab(r, 'hunter'); await click(r, '[data-act=htab][data-v=shop]'); await r.waitForSelector('[data-act=ac-buy]', { timeout: 15000 }); await r.shot('shop');
-  ok(!(await r.$('[data-act=buy-crystals]')), 'no free test-purchase buttons left');
-  const before = +(await textOf(r, '.balance .big'));
-  await click(r, '[data-act=ac-buy][data-v=crystals_55]'); await r.waitForTimeout(3000);
-  ok(await r.evaluate(() => window.__rzOpened && window.__rzOpened.amount === 4900), 'checkout opened with the server price (₹49)');
-  await r.waitForFunction(b => +document.querySelector('.balance .big').textContent.trim() === b + 55, before, { timeout: 15000 }).then(() => ok(true, 'balance rises by 55 after server-verified payment')).catch(async () => ok(false, 'balance rises by 55', await textOf(r, '.balance .big')));
-  ok(sql(`select bought from public.wallets w join public.profiles p on p.id = w.user_id where p.username = '${P}'`) === '55', 'wallet on server holds the 55 crystals');
+  console.log('no shop');
+  await tab(r, 'hunter'); await r.waitForTimeout(600);
+  ok(!(await r.$('[data-act=ac-buy]')) && !(await r.$('.cry-pill')) && !/crystal/i.test(await textOf(r, '#app')), 'no shop, crystals or payments anywhere for members');
+  await click(r, '[data-act=set-hero][data-v=female]'); await r.waitForTimeout(400);
+  ok(await r.evaluate(() => S.hero) === 'female', 'member switches hunter for free');
+
 
   console.log('owner controls');
   await click(o, '[data-act=ac-atab][data-v=guilds]'); await o.waitForSelector('[data-act=ac-gextend]', { timeout: 15000 }); await o.shot('admin-guilds');
@@ -143,9 +141,6 @@ const tab = (p, t) => click(p, `[data-act=tab][data-v=${t}]`);
   await o.waitForSelector('[data-act=ac-resetpw]', { timeout: 15000 }); await click(o, '[data-act=ac-resetpw]');
   await o.fill('#rpw', 'freshpass9'); await click(o, '[data-act=ac-resetpw-save]'); await o.waitForTimeout(1000);
   ok(/Password reset/.test(await textOf(o, 'body')), 'owner resets a member password');
-  // crystals grant through the owner screen
-  await click(o, '[data-act=ac-grant]'); await o.fill('#gr-n', '25'); await o.fill('#gr-r', 'e2e'); await click(o, '[data-act=ac-grant-save]'); await o.waitForTimeout(1200);
-  ok(sql(`select coalesce(max(w.bought),0) from public.wallets w join public.profiles p on p.id = w.user_id where p.username = '${P}'`) !== '0' && sql(`select count(*) from public.owner_log where action = 'grant_crystals' and target_name = '${P}'`) === '1', 'owner grants crystals from the app and it is logged');
   // delete needs the exact username typed
   await o.waitForSelector('[data-act=ac-deluser]', { timeout: 15000 }); await click(o, '[data-act=ac-deluser]');
   await o.fill('#du-c', 'wrong'); await click(o, '[data-act=ac-deluser-do]'); await o.waitForTimeout(400);

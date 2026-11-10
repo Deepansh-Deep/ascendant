@@ -1,6 +1,6 @@
 "use strict";
 /* =====================================================================
-   ASCENDANT cloud layer: accounts, offline-first sync, server wallet, checkout.
+   ASCENDANT cloud layer: accounts and offline-first sync.
    Off when js/config.js has no Supabase URL/key: the app then runs fully offline
    with no accounts, no guilds and no purchases (nothing is faked).
    ===================================================================== */
@@ -65,18 +65,15 @@ const Cloud = {
   changePassword(pw){ return this.http("PUT", "/auth/v1/user", {password: pw}); }
 };
 
-/* account cache: role, membership, master guild and wallet are kept on the phone so the app works offline */
+/* account cache: role, membership and master guild are kept on the phone so the app works offline */
 async function refreshAccount(){
   if (!CLOUD_ON || !Cloud.session || !S || S.demo) return null;
   const a = await Cloud.rpc("my_account");
   S.cloudAcct = {id: a.id, username: a.username, display_name: a.display_name, role: a.role, membership: a.membership, master_guild: a.master_guild, at: Date.now()};
-  S.cloudWallet = a.wallet || {bought: 0, pass: false};
   Sync.quietSave(); return a;
 }
 const acct = () => (S && S.cloudAcct) || null;
 const role = () => (acct() && acct().role) || "participant";
-const hasPass = () => !!(CLOUD_ON && S && !S.demo && S.cloudWallet && S.cloudWallet.pass);
-const boughtCrystals = () => (CLOUD_ON && S && !S.demo && S.cloudWallet) ? (S.cloudWallet.bought || 0) : 0;
 
 /* ---------------- offline-first sync ----------------
    Every change is saved on the phone first. Changed days and the settings blob are pushed in the
@@ -145,38 +142,3 @@ async function restoreFromServer(){
   Sync.quietSave(); return true;
 }
 
-/* ---------------- purchases (Razorpay, verified on the server) ---------------- */
-function loadScript(src){
-  return new Promise((res, rej) => { if (document.querySelector(`script[src="${src}"]`) && window.Razorpay) return res();
-    const s = document.createElement("script"); s.src = src; s.onload = res; s.onerror = () => rej(new Error("load")); document.head.appendChild(s); });
-}
-async function listProducts(){
-  if (UI.products) return UI.products;
-  try { UI.products = await Cloud.rpc("list_products"); } catch(e){ UI.products = null; }
-  return UI.products;
-}
-async function buyProduct(id){
-  if (!CLOUD_ON) return toast("Purchases need an Ascendant account");
-  if (S.demo) return toast("Demo data cannot make purchases");
-  modal(`<div class="center"><span class="spin"></span><p class="sm mute">Opening secure checkout…</p></div>`);
-  let order;
-  try { order = await Cloud.fn("create-order", {product_id: id}); }
-  catch(e){ return modal(`<h2>Checkout unavailable</h2><p class="mute">${esc(e.message)}</p><button class="btn" data-act="close">Close</button>`); }
-  try { await loadScript("https://checkout.razorpay.com/v1/checkout.js"); }
-  catch(e){ return modal(`<h2>Checkout unavailable</h2><p class="mute">The payment page could not load. Check your internet and try again. You were not charged.</p><button class="btn" data-act="close">Close</button>`); }
-  const accent = getComputedStyle(document.documentElement).getPropertyValue("--acc").trim() || "#C9A24D";
-  const rz = new window.Razorpay({
-    key: order.key_id, amount: order.amount, currency: order.currency, order_id: order.order_id, name: "Ascendant", description: order.title,
-    notes: {username: (acct() && acct().username) || ""}, theme: {color: accent},
-    handler: async resp => {
-      modal(`<div class="center"><span class="spin"></span><p class="sm mute">Confirming your payment…</p></div>`);
-      try { await Cloud.fn("verify-payment", resp); }
-      catch(e){ return modal(`<h2>Payment received</h2><p class="mute">Razorpay took the payment, but the confirmation did not reach us yet. It is credited automatically within a few minutes. Keep this reference: <b>${esc(resp.razorpay_payment_id)}</b></p><button class="btn" data-act="close">OK</button>`); }
-      try { await refreshAccount(); } catch(e){}
-      closeModal(); render(); SFX.done(); toast(`${order.title} added to your account`);
-    },
-    modal: {ondismiss: () => toast("Payment cancelled. You were not charged.")}
-  });
-  rz.on && rz.on("payment.failed", r => toast("Payment failed: " + ((r && r.error && r.error.description) || "try again")));
-  closeModal(); rz.open();
-}

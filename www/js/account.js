@@ -24,7 +24,7 @@ function renderAuth(){
   document.documentElement.dataset.theme = "gold";
   let body = "";
   if (a.step === "welcome") body = `<div class="welcome">${hunterStage("welcome-stage", {mode: "hero", interactive: true})}
-      <div class="w-copy"><h1>Train in real life.<br>Level up here.</h1><p class="mute">Log every set, earn XP, and watch your 3D hunter evolve. Compete with your gym's guild.</p></div></div>
+      <div class="w-copy"><h1>Train in real life.<br>Level up here.</h1><p class="mute">Log every set, earn XP, rank up and grow your aura. Compete with your gym's guild.</p></div></div>
       <button class="btn" data-act="ac-step" data-v="role">Create account</button>
       <div class="grid2"><button class="btn ghost" data-act="ac-step" data-v="signin">Sign in</button><button class="btn ghost" data-act="demo">Try demo data</button></div>`;
   if (a.step === "signin") body = `<div class="grow"><h1>Sign in</h1><p class="mute sm">Participants, guild masters and the owner all sign in here.</p>
@@ -33,7 +33,7 @@ function renderAuth(){
       <p class="tiny mute">Forgot your password? Ask Ascendant to reset it for you.</p></div>
       <div class="row between">${back("welcome")}<button class="link" data-act="ac-step" data-v="role">Create an account</button></div>`;
   if (a.step === "role") body = `<div class="grow"><h1>Who are you?</h1>
-      <button class="choice" data-act="ac-step" data-v="participant"><b>Participant</b><span class="sm mute">Train solo, earn XP and evolve your hunter. Join your gym's guild now or later.</span></button>
+      <button class="choice" data-act="ac-step" data-v="participant"><b>Participant</b><span class="sm mute">Train solo, earn XP and grow your aura. Join your gym's guild now or later.</span></button>
       <button class="choice" data-act="ac-step" data-v="master"><b>Guild Master</b><span class="sm mute">Register your gym, add your logo and approve members. Needs a guild master code from Ascendant.</span></button>
       <p class="tiny mute">Owner of Ascendant? Sign in with your account.</p></div>
       <div class="row between">${back("welcome")}<button class="link" data-act="ac-step" data-v="signin">I already have an account</button></div>`;
@@ -174,7 +174,7 @@ function viewAdmin(C){
   let body = "";
   if (t === "overview"){ const s = A.stats;
     body = `<section class="card">${s ? `<div class="cmp"><div><b class="num">${s.users}</b><span>Users</span></div><div><b class="num">${s.active_7d}</b><span>Active 7 days</span></div>
-        <div><b class="num">${s.active_guilds}/${s.guilds}</b><span>Active guilds</span></div><div><b class="num">${rupees(s.revenue_paise)}</b><span>${s.purchases} sales</span></div></div>` : `<p class="mute sm"><span class="spin sm"></span> Loading…</p>`}</section>
+        <div><b class="num">${s.active_guilds}/${s.guilds}</b><span>Active guilds</span></div></div>` : `<p class="mute sm"><span class="spin sm"></span> Loading…</p>`}</section>
       <section class="card"><h3>Create guild master codes</h3><p class="sm mute">Give one code to each gym after they pay. The gym owner registers with it and sets up the guild himself.</p>
         <div class="grid2"><div><label class="lab" for="cc-n">How many</label><input id="cc-n" class="input" inputmode="numeric" value="1"></div>
         <div><label class="lab" for="cc-days">Free days included</label><input id="cc-days" class="input" inputmode="numeric" value="30"></div></div>
@@ -197,8 +197,8 @@ function viewAdmin(C){
         ${!c.used_by_username && !c.revoked && !exp ? `<div class="row gap"><button class="btn sm ghost" data-act="ac-copy" data-v="${esc(c.code)}">Copy</button><button class="btn sm quiet" data-act="ac-revoke" data-v="${esc(c.code)}">Revoke</button></div>` : ""}</div>`; }).join("") : `<p class="mute sm">No codes yet.</p>`}</section>`;
   if (t === "users") body = `<section class="card"><div class="row gap"><input id="us-q" class="input grow" placeholder="Search username or name" value="${esc(A.q || "")}"><button class="btn sm" data-act="ac-usearch">Search</button></div></section>
     ${!A.users ? "" : `<section class="card">${A.users.length ? A.users.map(u => `<div class="line"><div><b>${esc(u.display_name || u.username)}</b> <span class="pill">${ROLE_NAME[u.role]}</span>
-      <div class="tiny mute">@${esc(u.username)}${u.guild_name ? `, ${esc(u.guild_name)} (${esc(u.membership)})` : ""}, joined ${fmtDate(u.created_at)}, last active ${fmtDate(u.last_seen)}${u.bought ? `, ${u.bought} crystals bought` : ""}${u.pass ? ", Pass" : ""}</div></div>
-      <div class="row gap wrap"><button class="btn sm ghost" data-act="ac-grant" data-u="${u.id}" data-n="${esc(u.username)}">Crystals</button><button class="btn sm quiet" data-act="ac-resetpw" data-u="${u.id}" data-n="${esc(u.username)}">Reset password</button>${u.role === "owner" ? "" : `<button class="btn sm danger" data-act="ac-deluser" data-u="${u.id}" data-n="${esc(u.username)}">Delete</button>`}</div></div>`).join("") : `<p class="mute sm">No users found.</p>`}</section>`}`;
+      <div class="tiny mute">@${esc(u.username)}${u.guild_name ? `, ${esc(u.guild_name)} (${esc(u.membership)})` : ""}, joined ${fmtDate(u.created_at)}, last active ${fmtDate(u.last_seen)}</div></div>
+      <div class="row gap wrap"><button class="btn sm quiet" data-act="ac-resetpw" data-u="${u.id}" data-n="${esc(u.username)}">Reset password</button>${u.role === "owner" ? "" : `<button class="btn sm danger" data-act="ac-deluser" data-u="${u.id}" data-n="${esc(u.username)}">Delete</button>`}</div></div>`).join("") : `<p class="mute sm">No users found.</p>`}</section>`}`;
   return segs([["overview", "Overview"], ["guilds", "Guilds"], ["codes", "Codes"], ["users", "Users"]], t, "ac-atab") + body;
 }
 
@@ -246,15 +246,6 @@ function accountCard(){
       <span class="pill ${st === "ok" ? "good" : st === "offline" ? "" : st === "error" ? "bad" : ""}">${st === "ok" ? "Synced" : st === "offline" ? "Offline" : st === "error" ? "Sync error" : "Saved on phone"}</span></div>
     <div class="tiny mute">${at ? `Last synced ${new Date(at).toLocaleString("en-IN", {day: "numeric", month: "short", hour: "2-digit", minute: "2-digit"})}.` : "Not synced yet."} ${Sync.lastError && st !== "ok" ? esc(Sync.lastError) : ""}</div>
     <div class="grid3"><button class="btn sm ghost" data-act="ac-syncnow">Sync now</button><button class="btn sm ghost" data-act="ac-chpw">Password</button><button class="btn sm quiet" data-act="ac-signout">Sign out</button></div></section>`;
-}
-function crystalShop(){
-  if (!CLOUD_ON) return `<section class="card"><h3>Get crystals</h3><p class="sm mute">Crystal packs and the Pass are sold through an Ascendant account. This offline build has none, so nothing here can be bought.</p></section>`;
-  if (S.demo) return `<section class="card"><h3>Get crystals</h3><p class="sm mute">Demo data cannot make purchases.</p></section>`;
-  const prods = UI.products;
-  if (!prods){ listProducts().then(p => { if (p && UI.tab === "hunter") render(); }); return `<section class="card"><h3>Get crystals</h3><p class="mute sm"><span class="spin sm"></span> Loading prices…</p></section>`; }
-  const packs = prods.filter(p => !p.pass);
-  return `<section class="card"><h3>Get crystals</h3><div class="grid3">${packs.map(p => `<button class="pack" data-act="ac-buy" data-v="${esc(p.id)}"><b class="num">${p.crystals}</b><span>${rupees(p.amount_paise)}</span></button>`).join("")}</div>
-    <p class="tiny mute">Secure payment by Razorpay: UPI, cards, net banking. Crystals are added to your account, not just this phone.</p></section>`;
 }
 
 /* ---------------- actions ---------------- */
@@ -319,7 +310,6 @@ document.addEventListener("click", async e => {
       case "ac-chpw-save": { const p1 = $("#pw1").value, p2 = $("#pw2").value;
         if (p1.length < 8) return void ($("#pwerr").textContent = "At least 8 characters"); if (p1 !== p2) return void ($("#pwerr").textContent = "The passwords do not match");
         try { await busy(() => Cloud.changePassword(p1), "Saving…"); closeModal(); toast("Password changed"); } catch(err){ $("#pwerr").textContent = err.message; } return; }
-      case "ac-buy": closeModal(); return buyProduct(v);
       // ---- guild: participant
       case "ac-join": { const code = ($("#gcode").value || "").trim().toUpperCase(); if (code.length !== 6) return void ($("#gerr").textContent = "Join codes have 6 characters");
         try { const r = await busy(() => Cloud.rpc("request_join", {p_join_code: code}), "Sending…"); await refreshAccount(); render(); toast(`Request sent to ${r.guild_name}`); }
@@ -364,12 +354,6 @@ document.addEventListener("click", async e => {
           modal(`<h2>${esc(b.dataset.n)}</h2><p class="tiny mute">Overall, this week</p>${rows.length ? `<ol class="board">${rows.map(r => `<li><span class="rk num">${r.rank}</span><span class="nm">${esc(r.display_name || r.username)}<span class="tiny mute">@${esc(r.username)}</span></span><span class="sc num">${r.score}</span></li>`).join("")}</ol>` : `<p class="mute sm">No members yet.</p>`}<button class="btn" data-act="close">Close</button>`); }
         catch(err){ modal(`<h2>${esc(b.dataset.n)}</h2><p class="bad-t sm">${esc(err.message)}</p><button class="btn" data-act="close">Close</button>`); } return; }
       case "ac-usearch": UI.g.admin.q = $("#us-q").value; UI.g.admin.users = null; render(); return guildLoad();
-      case "ac-grant": modal(`<h2>Crystals for @${esc(b.dataset.n)}</h2><p class="sm mute">Positive adds, negative removes. The balance never goes below 0. Every change is logged.</p>
-        <label class="lab" for="gr-n">Amount</label><input id="gr-n" class="input" inputmode="numeric" value="50"><label class="lab" for="gr-r">Reason</label><input id="gr-r" class="input" maxlength="120" placeholder="Giveaway, refund, test">
-        <p class="err" id="grerr"></p><button class="btn" data-act="ac-grant-save" data-u="${esc(b.dataset.u)}">Apply</button>`); return;
-      case "ac-grant-save": { const n = parseInt($("#gr-n").value, 10); if (!n || n < -5000 || n > 5000) return void ($("#grerr").textContent = "Enter a number between -5000 and 5000");
-        try { const r = await busy(() => Cloud.rpc("owner_grant_crystals", {p_user: b.dataset.u, p_amount: n, p_reason: $("#gr-r").value}), "Saving…"); closeModal(); UI.g.admin.users = null; UI.g.admin.log = null; render(); guildLoad(); toast(`@${r.username} now has ${r.balance} bought crystals`); }
-        catch(err){ $("#grerr").textContent = err.message; } return; }
       case "ac-deluser": modal(`<h2>Delete @${esc(b.dataset.n)}?</h2><p class="sm mute">This permanently removes the account, all workouts, scores and guild membership. Payment records are kept without a name. It cannot be undone.</p>
         <label class="lab" for="du-c">Type the username to confirm</label><input id="du-c" class="input" autocomplete="off"><p class="err" id="duerr"></p>
         <div class="grid2"><button class="btn ghost" data-act="close">Cancel</button><button class="btn danger" data-act="ac-deluser-do" data-u="${esc(b.dataset.u)}" data-n="${esc(b.dataset.n)}">Delete forever</button></div>`); return;

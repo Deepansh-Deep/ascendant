@@ -1,6 +1,6 @@
 "use strict";
 /* ASCENDANT boot: picks offline mode or account mode, restores the session, checks for app updates. */
-function initSeen(){ const C0 = compute(); S.seen = {level: C0.level, skills: C0.skills.unlocked.map(skId)}; S.seenEvo = C0.evo[0]; save(); }
+function initSeen(){ const C0 = compute(); S.seen = {level: C0.level, skills: C0.skills.unlocked.map(skId)}; save(); }
 function semverGt(a, b){ const pa = String(a).split(".").map(Number), pb = String(b).split(".").map(Number); for (let i = 0; i < 3; i++){ if ((pa[i] || 0) !== (pb[i] || 0)) return (pa[i] || 0) > (pb[i] || 0); } return false; }
 async function checkForUpdate(){
   // only the installed Android app updates itself from the website; the web version is always current
@@ -22,7 +22,7 @@ function updateBar(){
     Cloud.loadSession();
     if (Cloud.session && Cloud.session.user_id){
       STORE_KEY = KEY + ":" + Cloud.session.user_id; S = load();
-      if (S){ if (!S.seen) initSeen(); else if (S.seenEvo === undefined){ S.seenEvo = evoOf(S.seen.level)[0]; save(); }
+      if (S){ if (!S.seen) initSeen();
         render(); refreshAccount().then(() => render()).catch(() => {}); Sync.run(); }
       else await afterLogin();
     } else {
@@ -32,7 +32,6 @@ function updateBar(){
     S = load();
     if (!S) UI.onb = blankOnb();
     else if (!S.seen) initSeen();
-    else if (S.seenEvo === undefined){ S.seenEvo = evoOf(S.seen.level)[0]; save(); }
     render();
   }
   (function autoReport(){ if (!S || UI.onb || UI.auth) return; const thisMon = keyOf(mondayOf(todayD()));

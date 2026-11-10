@@ -1,6 +1,6 @@
 "use strict";
 /* ===== CONSTANTS ===== */
-const VERSION = "2.3.0";
+const VERSION = "3.0.0";
 const MUSCLES = ["Chest","Back","Shoulders","Biceps","Triceps","Legs","Abs","Cardio"];
 const OPTIONS = {
   Chest:["Bench Press","Incline Dumbbell Press","Chest Press Machine","Pec Deck Fly","Cable Crossover","Push-ups"],
@@ -51,11 +51,10 @@ function migrate(s){
   s.settings = Object.assign({rest:90, sound:true, remind:{on:false, time:"18:30"}}, s.settings || {});
   if (!s.settings.remind) s.settings.remind = {on:false, time:"18:30"};
   if (!("seenReport" in s)) s.seenReport = null;
-  if (!s.look) s.look = lookFromOldChar(s.char);
-  s.look = Object.assign({}, BASE_LOOK, s.look); s.owned = s.owned || []; s.wallet = Object.assign({bought:0, spent:0}, s.wallet||{});
+  s.hero = s.hero === "female" || s.hero === "male" ? s.hero : (s.look && s.look.gender === "female") || (s.char && s.char.body === "f") ? "female" : "male";
+  delete s.look; delete s.owned; delete s.wallet; delete s.ownedV2; delete s.seenEvo;
   s.achieved = s.achieved || {}; s.guild = s.guild || null;
   s.style = s.style || "gym"; s.path = s.path || "solo"; s.pass = !!s.pass;
-  if (s.pro && s.theme && s.theme!=="iron" && !s.owned.includes("theme:"+s.theme)) s.owned.push("theme:"+s.theme);
   return s;
 }
 let STORE_KEY = KEY;      // per account when signed in (see cloud.js)
@@ -129,7 +128,7 @@ function compute(){
   const R0 = {days, xp, level:L, rank:rankOf(L), into:xp-xpAt(L), need:200+50*L, streak, bestStreak:best,
     consistency: pl ? Math.round(dn/pl*100) : 0, weekBonus, weighXP, shieldsLeft: shieldUsed[monthOf(t)] ? 0 : 1,
     attrs:{STR:10+beatsAll+skills.unlocked.length*2, END:10+workouts, VIT:10+seen.size*2+Math.round(goalPct*20)}, workouts, beatsAll, goalPct, skills, body:bodyStages()};
-  R0.crystals = crystalsOf(R0); return R0;
+  return R0;
 }
 function weekStats(C, mon){
   const o = {workouts:0,sets:0,volume:0,xp:0,beats:0,planned:0,plannedDone:0,perDay:[]};
@@ -351,8 +350,7 @@ function demoState(){
     if (wd(d)===2) logs[k].entries.push({ex:"Running", sets:[{km:+(1.5+week*0.6).toFixed(1), reps:12+week*3}]}); }
   return migrate({theme:"iron", profile:{name:"Deepansh", photo:null, height:175, startWeight:78, goal:72, startDate:keyOf(start)},
     planHistory:[{from:keyOf(start), plan}], exercises, logs, weights, checkins, style:"both", path:"solo",
-    look:Object.assign({}, BASE_LOOK, {gender:"male", skin:3, face:"angular", jaw:"strong", hair:"fade", hairColor:"black", beard:"stubble", top:"tank", topColor:"graphite", bottom:"shorts", bottomColor:"onyx", shoes:"trainer", shoesColor:"white"}),
-    owned:["hair:fade","top:tank"], wallet:{bought:0, spent:2}});
+    hero:"male"});
 }
 
 /* ===== CEREMONY QUEUE ===== */

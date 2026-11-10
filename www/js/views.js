@@ -1,23 +1,16 @@
 "use strict";
 /* =====================================================================
-   ASCENDANT 2.0 screens, actions and boot.
+   ASCENDANT screens, actions and boot.
    ===================================================================== */
-const SKINC = ["#EBCBB6","#DDB39A","#C99A7E","#B08064","#93664C","#76503B","#5A3B2B","#3F291E"];
-const HAIRC = {black:"#1A1716", espresso:"#3A2A20", brown:"#4E3423", chestnut:"#6E3F22", auburn:"#7D3220", blonde:"#B8925A", ash:"#8F8A82", silver:"#C9C7C2", crimson:"#7E1C24", azure:"#23406E"};
-const CLOTHC = {graphite:"#2A2C30", onyx:"#121315", bone:"#D9D4CA", steel:"#5B6470", olive:"#4A5139", navy:"#1D2A44", oxblood:"#5A1E22", sand:"#B59E7C", gold:"#B8913E", white:"#E8E8E6"};
-const EYEC = {brown:"#5B3A21", hazel:"#7A6033", grey:"#7D8A93", green:"#4F6B45", dark:"#2B1D14"};
 const TABS = [["home","Home","home"],["train","Train","lift"],["hunter","Hunter","user"],["progress","Progress","chart"],["guild","Guild","guild"]];
-const VIEW_BTNS = [["front","Front"],["three","Angle"],["side","Side"],["back","Back"],["face","Face"]];
 const segs = (opts, cur, act) => `<div class="seg" role="tablist">${opts.map(([k, l]) => `<button role="tab" aria-selected="${cur === k}" class="${cur === k ? "on" : ""}" data-act="${act}" data-v="${k}">${l}</button>`).join("")}</div>`;
 const secH = (title, right = "") => `<div class="sec-h"><h2>${title}</h2>${right}</div>`;
-const curLook = () => UI.onb ? UI.onb.look : S ? Object.assign({}, S.look, UI.preview || {}) : Object.assign({}, BASE_LOOK);
 const logKey = () => UI.editKey || TODAY();
 
 /* ---------------- render ---------------- */
 function render(){
   const root = document.documentElement;
-  const pt = UI.previewItem && CAT[UI.previewItem] && CAT[UI.previewItem].slot === "theme" ? CAT[UI.previewItem].key : null;
-  root.dataset.theme = pt || (S && S.theme) || "gold";
+  root.dataset.theme = (S && S.theme) || "gold";
   root.dataset.font = fontKey();
   if (UI.auth){ renderAuth(); $("#nav").innerHTML = ""; $("#pbar").innerHTML = ""; return; }
   if (!S || UI.onb){ renderOnboarding(); $("#nav").innerHTML = ""; return; }
@@ -25,48 +18,35 @@ function render(){
   const V = {home:viewHome, train:viewTrain, hunter:viewHunter, progress:viewProgress, guild:viewGuild, settings:viewSettings}[UI.tab] || viewHome;
   $("#app").innerHTML = updateBar() + (S.demo ? `<div class="demo-bar"><span>Demo data. These workouts are generated examples, not your training.</span><button data-act="reset">${CLOUD_ON ? "Leave demo" : "Start my own"}</button></div>` : "") + V(C);
   $("#nav").innerHTML = `<div class="nav-in">${TABS.map(([k, l, i]) => `<button class="${UI.tab === k ? "on" : ""}" data-act="tab" data-v="${k}" ${UI.tab === k ? 'aria-current="page"' : ""}>${ICON[i]}<span>${l}</span></button>`).join("")}</div>`;
-  $("#pbar").innerHTML = UI.tab === "hunter" ? previewBar(C) : "";
+  $("#pbar").innerHTML = "";
   mountStage();
   if (!UI.achInit){ UI.achInit = true; C.ach.forEach(id => { if (!S.achieved[id]) S.achieved[id] = TODAY(); }); save(); }
   else checkAchievements(C);
   if (UI.tab === "guild") guildLoad();
 }
 
-/* stage bridge (works in onboarding too) */
-/* which anime aura plays after training: the equipped aura, otherwise the Shadow Monarch blue */
-const auraKey = L => (L && L.aura && L.aura !== "none") ? L.aura : "monarch";
+/* stage bridge (works in onboarding too): the 2D hero with its earned aura */
+const heroOf = () => UI.onb ? (UI.onb.hero || "male") : (S && S.hero) || "male";
+const trainedToday = () => { const tl = S && S.logs[TODAY()]; return !!(tl && tl.type === "workout" && tl.saved && daySets(tl)); };
 async function mountStage(){
   const el = document.querySelector(".stage"); if (!el) return;
-  const api = window.Hunter3D;
-  if (!api){ if (!UI.waiting3d){ UI.waiting3d = true; window.addEventListener("hunter3d-ready", () => { UI.waiting3d = false; mountStage(); }, {once:true}); } return; }
-  const fail = msg => { el.innerHTML = `<div class="stage-fallback">${hexBadge(S ? compute().rank[1] : "E", 76)}<p>${msg}</p></div>`; };
-  if (!api.supported) return fail("This device cannot run 3D (WebGL is unavailable). Training, XP and rankings work normally.");
+  const fail = msg => { el.innerHTML = `<div class="stage-fallback">${hexBadge(S && !UI.onb ? compute().rank[1] : "E", 76)}<p>${msg}</p></div>`; };
+  if (!Hero2D.supported) return fail("This phone cannot draw the hunter. Training, XP and rankings work normally.");
   const opts = JSON.parse(el.dataset.stage || "{}");
+  const o = {hero: opts.hero || heroOf(), rank: "E", power: .25, charged: false, still: !!opts.still};
+  if (S && !UI.onb && !UI.auth){ const C = compute(); o.rank = C.rank[1]; o.power = C.aura; o.charged = trainedToday() && UI.tab === "home"; }
   try {
-    const ok = await api.ready; if (!ok) return fail("3D failed to start on this device. Training, XP and rankings work normally.");
-    if (!el.isConnected) return;
-    api.mount(el, opts);
-    const L = curLook();
-    await api.setLook(L);
-    if (!el.isConnected) return;
-    if (S && !UI.onb && !UI.auth){ const C = compute(); api.setBody({level: C.level, stages: C.body.stages});
-      const a = CAT["aura:" + L.aura]; api.setAura(a && a.hex, a && a.key !== "none" ? Math.max(0.4, C.aura) : 0, L.aura);
-      const tl = S.logs[TODAY()], trained = !!(tl && tl.type === "workout" && tl.saved && daySets(tl)), fxc = auraKey(L);
-      const charged = trained && (UI.tab === "home" || el.classList.contains("cer-stage"));
-      api.setCharged(charged, fxc);
-      if (charged && UI.justTrained && !$("#cer").innerHTML){ UI.justTrained = false; api.burst(fxc); } }
-    else { api.setBody({level:1, stages:{}}); api.setAura(null, 0); api.setCharged(false); }
-    api.setPose(L.pose || "relaxed");
-    api.view(opts.view || "front");
+    await Hero2D.mount(el, o);
     el.classList.add("live");
-  } catch(err){ console.error(err); fail("The 3D model files could not be loaded (assets/hunter). Check your connection and reopen the app."); }
+    if (o.charged && UI.justTrained && !$("#cer").innerHTML){ UI.justTrained = false; Hero2D.burst(); }
+  } catch(err){ console.error(err); fail("The hunter image could not be loaded. Check your connection and reopen the app."); }
 }
 
 /* ---------------- HOME ---------------- */
 function greet(){ const h = new Date().getHours(); return h < 5 ? "Late session" : h < 12 ? "Good morning" : h < 17 ? "Good afternoon" : "Good evening"; }
 function musclesFromLog(k){ const l = S.logs[k]; if (!l || l.type !== "workout") return []; return [...new Set(l.entries.map(e => MUSCLE_OF[e.ex]).filter(Boolean))]; }
 function viewHome(C){
-  const t = TODAY(), td = C.days[t] || {ms:[], status:"rest", sets:0}, nx = nextEvo(C.level), xpPct = C.level >= 60 ? 100 : Math.round(C.into / C.need * 100);
+  const t = TODAY(), td = C.days[t] || {ms:[], status:"rest", sets:0}, nr = RANKS.find(r => r[0] > C.level), xpPct = C.level >= 60 ? 100 : Math.round(C.into / C.need * 100);
   const daily = dailyChallenges(C, t), weekly = weeklyChallenges(C, keyOf(mondayOf(todayD())));
   const thisMon = mondayOf(todayD()), lastMon = addDays(thisMon, -7), lw = weekStats(C, lastMon), g = gradeOf(lw);
   const log = S.logs[t], inProgress = log && log.type === "workout" && daySets(log) > 0 && !log.saved;
@@ -78,17 +58,16 @@ function viewHome(C){
   const status = doneToday ? `<span class="pill good">Done, +${td.xp} XP</span>` : td.status === "skipped" ? `<span class="pill bad">Skipped</span>` : inProgress ? `<span class="pill acc">In progress</span>` : td.ms.length ? `<span class="pill acc">Planned</span>` : `<span class="pill">Rest</span>`;
   return `
   <header class="topbar"><div><div class="hello">${greet()}</div><div class="date">${fmt(todayD(), {weekday:"long", day:"numeric", month:"long"})}</div></div>
-    <div class="row"><button class="cry-pill" data-act="open-shop" aria-label="${C.crystals} crystals, open shop">${CRY}<b>${C.crystals}</b></button>
-    <button class="iconbtn" data-act="tab" data-v="settings" aria-label="Settings and plan">${ICON.gear}</button></div></header>
+    <div class="row"><button class="iconbtn" data-act="tab" data-v="settings" aria-label="Settings and plan">${ICON.gear}</button></div></header>
   <section class="hero">
     ${hunterStage("hero-stage", {mode:"hero", interactive:true})}
-    <button class="stage-cta" data-act="tab" data-v="hunter">Customize</button>
+    <button class="stage-cta" data-act="tab" data-v="hunter">Aura ${Math.round(C.aura * 100)}%</button>
     <div class="hero-info">
       <div class="hero-id">${hexBadge(C.rank[1], 54, "rank")}
-        <div class="hid"><div class="h-name"><span class="glow" data-rank="${C.rank[1]}">${esc(S.hunterName || S.profile.name)}</span></div><div class="h-user">@${esc(S.profile.name)}</div><div class="h-tags"><span>${C.rank[2]} rank</span><span>${C.evo[1]} form</span>${doneToday ? `<span class="charged">Charged</span>` : ""}</div></div></div>
+        <div class="hid"><div class="h-name"><span class="glow" data-rank="${C.rank[1]}">${esc(S.hunterName || S.profile.name)}</span></div><div class="h-user">@${esc(S.profile.name)}</div><div class="h-tags"><span>${C.rank[2]} rank</span><span>${AURA_NAME[C.rank[1]]}</span>${doneToday ? `<span class="charged">Charged</span>` : ""}</div></div></div>
       <div class="lvl-row"><span class="lvl">Level <b class="num">${C.level}</b></span><span class="xp num">${nf(C.into)} / ${nf(C.need)} XP</span></div>
       <div class="xpbar" role="progressbar" aria-valuenow="${xpPct}" aria-valuemin="0" aria-valuemax="100"><i style="width:${xpPct}%"></i></div>
-      <div class="evo-next">${nx ? `Next evolution: <b>${nx[1]}</b> at level ${nx[0]}, ${nf(xpAt(nx[0]) - C.xp)} XP away` : "Final evolution reached"}</div>
+      <div class="evo-next">${nr ? `Next rank: <b>${nr[2]}</b> at level ${nr[0]}, ${nf(xpAt(nr[0]) - C.xp)} XP away` : "Highest rank reached"}</div>
     </div>
   </section>
 
@@ -251,7 +230,7 @@ function exHistory(ex){
 }
 function viewSkills(C){
   const sk = C.skills;
-  return `<p class="sm mute">Hit the target in one set to unlock the next skill. Each unlock gives +${XP.skill} XP and 3 crystals.</p>
+  return `<p class="sm mute">Hit the target in one set to unlock the next skill. Each unlock gives +${XP.skill} XP.</p>
   ${SKILLS.map(t => { const st = sk.trees[t.id];
     return `<section class="card"><div class="row between"><h3>${t.name}</h3><span class="pill ${st.count === 5 ? "good" : "acc"}">${st.count} / 5</span></div>
     <div class="tree">${t.nodes.map(([ex, target], i) => { const done = i < st.count, cur = st.next && st.next.i === i;
@@ -261,111 +240,40 @@ function viewSkills(C){
         ${cur ? `<button class="btn sm ghost" data-act="add-skill-ex" data-e="${esc(ex)}">Train</button>` : ""}</div>`; }).join("")}</div></section>`; }).join("")}`;
 }
 
-/* ---------------- HUNTER STUDIO ---------------- */
+/* ---------------- HUNTER ---------------- */
 function viewHunter(C){
-  const ht = UI.htab || "look";
-  return `<div class="page-h"><h1>Hunter</h1><button class="cry-pill" data-act="htab" data-v="shop">${CRY}<b>${C.crystals}</b></button></div>
-  <section class="studio ${ht === "look" ? "sticky" : ""}">${hunterStage("studio-stage", {mode:"hero", interactive:true, view: UI.view || "front"})}
-    <div class="studio-tag"><b>${esc(S.hunterName || S.profile.name)}</b><span>Level ${C.level}, ${C.evo[1]} form</span></div>
-    <div class="stage-hint tiny">Drag to rotate, pinch to zoom</div>
-    <div class="view-btns" role="group" aria-label="Camera view">${VIEW_BTNS.map(([k, l]) => `<button class="${(UI.view || "front") === k ? "on" : ""}" data-act="view" data-v="${k}">${l}</button>`).join("")}</div>
-  </section>
-  ${segs([["look", "Customize"], ["evo", "Evolution"], ["shop", "Shop"], ["badges", "Badges"]], ht, "htab")}
-  ${ht === "evo" ? panelEvo(C) : ht === "shop" ? panelShop(C) : ht === "badges" ? panelBadges(C) : panelLook(C, "studio")}`;
+  const ht = UI.htab === "badges" || UI.htab === "muscles" ? UI.htab : "aura";
+  return `<div class="page-h"><h1>Hunter</h1></div>
+  <section class="hero studio-hero">${hunterStage("studio-stage", {})}
+    <div class="studio-tag"><b><span class="glow" data-rank="${C.rank[1]}">${esc(S.hunterName || S.profile.name)}</span></b><span>Level ${C.level}, ${C.rank[2]} rank</span></div></section>
+  ${segs([["aura", "Aura"], ["badges", "Badges"], ["muscles", "Muscles"]], ht, "htab")}
+  ${ht === "badges" ? panelBadges(C) : ht === "muscles" ? panelMuscles(C) : panelAura(C)}`;
 }
-const LOOK_CATS = [["identity", "Body and face"], ["hair", "Hair"], ["facial", "Facial hair"], ["outfit", "Outfit"], ["gear", "Gear"], ["aura", "Aura"], ["pose", "Pose"]];
-function optRow(label, field, opts, L, act){
-  return `<div class="opt"><span class="opt-l">${label}</span><div class="chips">${opts.map(([v, n]) => `<button class="chip ${(L[field] || "") === v ? "on" : ""}" data-act="${act}" data-f="${field}" data-v="${v}">${n}</button>`).join("")}</div></div>`;
+function panelAura(C){
+  const pw = Math.round(C.aura * 100), nr = RANKS.find(r => r[0] > C.level);
+  return `<section class="card"><div class="row between"><div><div class="k">Aura</div><h3>${AURA_NAME[C.rank[1]]}</h3></div><b class="num aura-pw">${pw}%</b></div>
+    <div class="xpbar"><i style="width:${pw}%"></i></div>
+    <p class="tiny mute">Your aura is earned, never bought. It grows with your level, rank, streak and every best you beat, and burns brightest on days you train.</p>
+    ${AURA_PARTS.map(([n, f, w]) => `<div class="line"><span>${n}</span><span class="num"><b>${Math.round(f(C) * w * 100)}</b> <span class="tiny mute">/ ${Math.round(w * 100)}</span></span></div>`).join("")}
+    <div class="line"><span>Base</span><span class="num"><b>${Math.round(AURA_BASE * 100)}</b> <span class="tiny mute">/ ${Math.round(AURA_BASE * 100)}</span></span></div></section>
+  <section class="card">${secH("Aura by rank", nr ? `<span class="tiny mute">${nr[2]} at level ${nr[0]}</span>` : "")}
+    <div class="aura-ranks">${RANKS.map(r => `<div class="ar ${C.level >= r[0] ? "got" : ""} ${C.rank[0] === r[0] ? "cur" : ""}" style="--ac:${Hero2D.PALETTES[r[1]].main}"><i></i><b>${r[1]}</b><span>${AURA_NAME[r[1]]}</span></div>`).join("")}</div></section>
+  <section class="card"><div class="row between gap"><div class="grow"><h3>Your hunter</h3><div class="tiny mute">Free to switch any time.</div></div>
+    <div class="seg mini">${HEROES.map(([k, n]) => `<button class="${(S.hero || "male") === k ? "on" : ""}" data-act="set-hero" data-v="${k}">${n}</button>`).join("")}</div></div>
+    <div class="opt"><label class="opt-l" for="hn">Hunter name</label><input id="hn" class="input" maxlength="18" data-hn value="${esc(S.hunterName || "")}" placeholder="${esc(S.profile.name)}"></div></section>`;
 }
-function panelLook(C, mode){
-  const L = curLook(), male = L.gender === "male", onb = mode === "onb", idAct = onb ? "onb-look" : "id-set";
-  const cats = LOOK_CATS.filter(c => !(c[0] === "facial" && !male) && !(onb && (c[0] === "aura" || c[0] === "pose")));
-  const cat = cats.some(c => c[0] === UI.lcat) ? UI.lcat : "identity";
-  const tiles = (filter) => `<div class="tiles">${CATALOG.filter(filter).map(it => tile(it, C, L, onb)).join("")}</div>`;
-  const fits = it => !it.g || it.g === L.gender;
-  let body = "";
-  if (cat === "identity") body = `
-    ${optRow("Body", "gender", [["male", "Male"], ["female", "Female"]], L, idAct)}
-    <div class="opt"><span class="opt-l">Skin tone</span><div class="swatches">${SKINC.map((c, i) => `<button class="sw ${L.skin === i ? "on" : ""}" style="--c:${c}" data-act="${idAct}" data-f="skin" data-v="${i}" aria-label="Skin tone ${i + 1}"></button>`).join("")}</div></div>
-    ${optRow("Face shape", "face", [["oval", "Oval"], ["square", "Square"], ["round", "Round"], ["angular", "Angular"]], L, idAct)}
-    ${optRow("Jaw", "jaw", [["soft", "Soft"], ["", "Balanced"], ["strong", "Strong"]], L, idAct)}
-    ${optRow("Nose", "nose", [["narrow", "Narrow"], ["", "Balanced"], ["broad", "Broad"]], L, idAct)}
-    <div class="opt"><span class="opt-l">Eyes</span><div class="swatches">${Object.entries(EYEC).map(([k, c]) => `<button class="sw ${L.eyes === k ? "on" : ""}" style="--c:${c}" data-act="${idAct}" data-f="eyes" data-v="${k}" aria-label="${k} eyes"></button>`).join("")}</div></div>
-    ${optRow("Brows", "brows", [["normal", "Natural"], ["bold", "Bold"]], L, idAct)}
-    ${optRow("Frame", "build", [["lean", "Lean"], ["", "Balanced"], ["solid", "Solid"], ["heavy", "Heavy"]], L, idAct)}
-    <div class="opt"><label class="opt-l" for="hn">Hunter name</label><input id="hn" class="input" maxlength="18" data-hn value="${esc(onb ? UI.onb.hunterName : (S.hunterName || ""))}" placeholder="${esc(onb ? (UI.onb.name || "Your hunter") : S.profile.name)}"></div>
-    ${onb ? "" : `<p class="tiny mute">Your frame evolves from training on top of these choices. Changing body or face after creation costs ${REDESIGN_COST} crystals, free with the Pass. Your hunter name is free to change.</p>`}`;
-  if (cat === "hair") body = `<div class="sub-h">Style</div>${tiles(it => it.slot === "hair" && fits(it))}<div class="sub-h">Color</div>${tiles(it => it.slot === "hairColor")}`;
-  if (cat === "facial") body = tiles(it => it.slot === "beard");
-  if (cat === "outfit"){ const tgt = UI.colorTarget || "topColor";
-    body = `<div class="sub-h">Top</div>${tiles(it => it.slot === "top" && fits(it))}<div class="sub-h">Bottoms</div>${tiles(it => it.slot === "bottom")}<div class="sub-h">Footwear</div>${tiles(it => it.slot === "shoes")}
-      <div class="sub-h">Colors</div><div class="chips">${[["topColor", "Top"], ["bottomColor", "Bottoms"], ["shoesColor", "Footwear"]].map(([k, n]) => `<button class="chip ${tgt === k ? "on" : ""}" data-act="ctarget" data-v="${k}">${n}</button>`).join("")}</div>${tiles(it => it.slot === "color")}`; }
-  if (cat === "gear") body = `${tiles(it => it.slot === "acc")}<div class="sub-h">Wraps and headband color</div>${tiles(it => it.slot === "color")}`;
-  if (cat === "aura") body = `<p class="tiny mute">Aura strength follows your streak. Legendary auras are earned by level and cannot be bought.</p>${tiles(it => it.slot === "aura")}`;
-  if (cat === "pose") body = `<p class="tiny mute">Legendary poses unlock with your level.</p>${tiles(it => it.slot === "pose")}`;
-  return `<div class="chips cats">${cats.map(([k, n]) => `<button class="chip ${cat === k ? "on" : ""}" data-act="lcat" data-v="${k}">${n}</button>`).join("")}</div><div class="panel">${body}</div>`;
-}
-function swatchFor(it){
-  if (it.slot === "hairColor") return `<i class="t-sw" style="--c:${HAIRC[it.key]}"></i>`;
-  if (it.slot === "color") return `<i class="t-sw" style="--c:${CLOTHC[it.key]}"></i>`;
-  if (it.slot === "aura") return `<i class="t-sw aura" style="--c:${it.hex || "#3A3F47"}"></i>`;
-  if (it.slot === "theme") return `<i class="t-sw" style="--c:${(THEMES.find(t => t[0] === it.key) || [])[2]}"></i>`;
-  return "";
-}
-function isEquipped(it, L){
-  if (it.slot === "acc") return (L.acc || []).includes(it.key);
-  if (it.slot === "color") return L[UI.colorTarget || "topColor"] === it.key;
-  if (it.slot === "theme") return S && S.theme === it.key;
-  return (L[it.slot] || "none") === it.key;
-}
-function tile(it, C, L, onb){
-  const own = onb ? (!it.cost && !it.earn) : owns(it.id, C.level), on = isEquipped(it, L), prev = UI.previewItem === it.id;
-  const state = on ? "Equipped" : own ? "Owned" : onb ? "Unlock later" : it.earn ? `Level ${it.earn}` : `${it.cost} ${CRY}`;
-  return `<button class="tile ${on ? "on" : ""} ${own ? "" : "locked"} ${prev ? "prev" : ""}" data-act="${onb ? "onb-item" : "item"}" data-v="${it.id}" style="--rc:${RARITY[it.rarity].c}" aria-pressed="${on}">
-    ${swatchFor(it)}<span class="t-n">${esc(it.name)}</span><span class="t-r">${RARITY[it.rarity].n}</span><span class="t-s">${state}</span></button>`;
-}
-function lookPatch(it, L){
-  if (it.slot === "acc") return {acc: (L.acc || []).includes(it.key) ? L.acc.filter(a => a !== it.key) : [...(L.acc || []), it.key]};
-  if (it.slot === "color"){ const tgt = UI.colorTarget || "topColor"; return UI.lcat === "gear" ? {accColor: it.key} : {[tgt]: it.key}; }
-  return {[it.slot]: it.key};
-}
-function previewBar(C){
-  if (UI.previewKind === "identity") return `<div class="pbar"><div class="grow"><b>Body or face change</b><span class="tiny mute">${hasPass() ? "Free with your Pass" : `Costs ${REDESIGN_COST} crystals. You have ${C.crystals}.`}</span></div>
-    <button class="btn sm quiet" data-act="cancel-preview">Discard</button><button class="btn sm" data-act="save-identity">Save</button></div>`;
-  const it = UI.previewItem && CAT[UI.previewItem]; if (!it) return "";
-  const earnOnly = !!it.earn;
-  return `<div class="pbar" style="--rc:${RARITY[it.rarity].c}"><div class="grow"><b>${esc(it.name)}</b><span class="tiny">${rarityTag(it.rarity)} ${earnOnly ? `Earned at level ${it.earn}. You are level ${C.level}.` : `Preview. ${it.cost} crystals, you have ${C.crystals}.`}</span></div>
-    <button class="btn sm quiet" data-act="cancel-preview">${earnOnly ? "Close" : "Cancel"}</button>${earnOnly ? "" : `<button class="btn sm" data-act="buy-item" data-v="${it.id}">Buy</button>`}</div>`;
-}
-function panelEvo(C){
-  const nx = nextEvo(C.level);
-  return `<section class="card"><div class="sec-h"><h3>Evolution</h3><span class="pill acc">${C.evo[1]}</span></div>
-    <p class="sm mute">${esc(C.evo[2])} ${nx ? `Next form, ${nx[1]}, at level ${nx[0]}.` : ""}</p>
-    <div class="ladder">${EVOLUTION.map(e => `<div class="rung ${C.level >= e[0] ? "got" : ""} ${C.evo[0] === e[0] ? "cur" : ""}"><span class="lv num">Lv ${e[0]}</span><div><b>${e[1]}</b><div class="tiny mute">${e[2]}</div></div></div>`).join("")}</div></section>
-  <section class="card"><div class="sec-h"><h3>Muscle development</h3><span class="tiny mute">Stage 1 to 5</span></div>
+function panelMuscles(C){
+  return `<section class="card"><div class="sec-h"><h3>Muscle development</h3><span class="tiny mute">Stage 1 to 5</span></div>
     ${REGIONS.map(([r, n]) => { const st = C.body.stages[r], sets = C.body.sets[r], a = STAGE_AT[st - 1], b = STAGE_AT[st];
       const p = st >= 5 ? 100 : Math.round((sets - a) / (b - a) * 100);
       return `<div class="region"><div class="row between"><b>${n}</b><span class="tiny mute num">Stage ${st}${st < 5 ? `, ${b - sets} sets to stage ${st + 1}` : ", maxed"}</span></div><div class="stage-bar">${[1, 2, 3, 4, 5].map(i => `<i class="${i < st ? "full" : i === st ? "cur" : ""}" ${i === st && st < 5 ? `style="--p:${p}%"` : ""}></i>`).join("")}</div></div>`; }).join("")}
-    <p class="tiny mute">Each region grows from the hard sets you log for it. At most 20 sets per region per week count, so extra junk volume never speeds it up and recovery stays part of the plan. This is a game picture of your training effort, not a prediction of how your real body will change.</p></section>`;
-}
-function panelShop(C){
-  const pk = PACKS[0], pkOwned = pk.items.every(id => S.owned.includes(id)) || hasPass();
-  const forSale = r => CATALOG.filter(it => it.rarity === r && !it.earn && it.cost && !owns(it.id, C.level));
-  return `<section class="card balance"><div><div class="k">Crystals</div><div class="big num">${C.crystals}</div></div>
-    <div class="tiny mute">Earned free: 5 per rank, 2 per full week, 3 per skill, 1 to 10 per badge.</div></section>
-  <section class="card pass"><div class="row between"><div><div class="k">Ascendant Pass</div><h3>${hasPass() ? "Active" : "One-time unlock"}</h3></div>${hasPass() ? '<span class="pill good">Owned</span>' : `<button class="btn sm" data-act="pass">Details</button>`}</div>
-    <p class="tiny mute">Every crystal-priced item and free redesigns. Legendary items stay earned only, and nothing you buy affects rankings.</p></section>
-  <section class="card"><div class="row between"><div><h3>${pk.name}</h3><div class="tiny mute">${pk.desc}</div></div>${pkOwned ? '<span class="pill good">Owned</span>' : `<button class="btn sm" data-act="buy-pack">${pk.cost} ${CRY}</button>`}</div></section>
-  ${["epic", "rare"].map(r => { const list = forSale(r); return list.length ? `<div class="sub-h">${RARITY[r].n} items</div><div class="tiles">${list.map(it => tile(it, C, curLook(), false)).join("")}</div>` : ""; }).join("")}
-  <div class="sub-h">Legendary, earned only</div><div class="tiles">${CATALOG.filter(it => it.rarity === "legendary").map(it => tile(it, C, curLook(), false)).join("")}</div>
-  <div class="sub-h">Themes</div><div class="tiles">${CATALOG.filter(it => it.slot === "theme").map(it => tile(it, C, curLook(), false)).join("")}</div>
-  ${crystalShop()}`;
+    <p class="tiny mute">Each region grows from the hard sets you log for it. At most 20 sets per region per week count, so junk volume never speeds it up.</p></section>`;
 }
 function panelBadges(C){
   return `<p class="sm mute">${C.ach.length} of ${ACH.length} earned. Badges are checked against your logs, so they cannot be bought.</p>
   <div class="badges">${ACH.map(a => { const got = C.ach.includes(a.id);
     return `<div class="bcard ${got ? "got" : ""}" style="--rc:${RARITY[a.rarity].c}">${hexBadge(got ? a.name.split(" ").map(w => w[0]).join("").slice(0, 3) : "?", 44, "ach")}
-      <div><b>${esc(a.name)}</b><div class="tiny mute">${esc(a.desc)}</div><div class="tiny">${rarityTag(a.rarity)} ${got ? `<span class="mute">Earned ${S.achieved[a.id] ? short(S.achieved[a.id]) : ""}, +${ACH_CRYSTALS[a.rarity]} crystals</span>` : `<span class="mute">+${ACH_CRYSTALS[a.rarity]} crystals</span>`}</div></div></div>`; }).join("")}</div>`;
+      <div><b>${esc(a.name)}</b><div class="tiny mute">${esc(a.desc)}</div><div class="tiny">${rarityTag(a.rarity)} ${got ? `<span class="mute">Earned ${S.achieved[a.id] ? short(S.achieved[a.id]) : ""}</span>` : ""}</div></div></div>`; }).join("")}</div>`;
 }
 
 /* ---------------- PROGRESS ---------------- */
@@ -424,7 +332,7 @@ function viewSettings(C){
   ${accountCard()}
   <section class="card row gap"><div class="ava">${S.profile.photo ? `<img src="${S.profile.photo}" alt="">` : esc((S.profile.name || "?")[0].toUpperCase())}</div><div class="grow"><h3>@${esc(S.profile.name)}</h3>
     <div class="tiny mute">${S.profile.height || "?"} cm, goal ${S.profile.goal} kg, since ${fmt(fromKey(S.profile.startDate), {day:"numeric", month:"short", year:"numeric"})}</div></div><button class="btn sm ghost" data-act="edit-profile">Edit</button></section>
-  ${secH("Theme")}<div class="tiles">${CATALOG.filter(it => it.slot === "theme").map(it => tile(it, C, S.look, false)).join("")}</div>
+  ${secH("Theme")}<div class="chips">${THEMES.map(([k, n, c]) => `<button class="chip theme-chip ${(S.theme || "gold") === k ? "on" : ""}" data-act="set-theme" data-v="${k}"><i style="--c:${c}"></i>${n}</button>`).join("")}</div>
   ${secH("Font", `<span class="tiny mute">Changes the whole app</span>`)}<div class="ftiles">${FONTS.map(f => `<button class="ftile ${fontKey() === f[0] ? "on" : ""}" data-font="${f[0]}" data-act="set-font" data-v="${f[0]}" aria-pressed="${fontKey() === f[0]}"><b>${f[1]}</b><span>${f[2]}</span><i>Level 24, 1,280 XP</i></button>`).join("")}</div>
   ${secH("How you train")}${segs([["gym", "Gym"], ["home", "Home"], ["both", "Both"]], S.style, "style")}
   <p class="tiny mute">Changes which exercises you can pick. Home shows calisthenics, holds and running.</p>
@@ -446,16 +354,16 @@ function viewSettings(C){
   ${secH("Backup and restore")}<section class="card"><p class="sm mute">Your training data lives only on this phone. Save a backup before changing phones or reinstalling.</p>
     <div class="grid2"><button class="btn ghost sm" data-act="backup">Save backup</button><button class="btn ghost sm" data-act="restore">Restore</button></div></section>
   <div class="grid2">${CLOUD_ON && Cloud.session ? "" : `<button class="btn ghost" data-act="demo">Load demo data</button>`}<button class="btn danger" data-act="reset">Start fresh</button></div>
-  <p class="tiny mute center">Ascendant ${VERSION}. Offline first. No ads. 3D hunter built on CC0 MakeHuman assets.</p>`;
+  <p class="tiny mute center">Ascendant ${VERSION}. Offline first. No ads. Free for members.</p>`;
 }
 
 /* ---------------- ONBOARDING ---------------- */
-function blankOnb(){ return {step:0, name:"", hunterName:"", height:"", weight:"", goal:"", photo:null, style:"gym", plan:[[], [], [], [], [], [], []], ex:{}, look: Object.assign({}, BASE_LOOK)}; }
+function blankOnb(){ return {step:0, name:"", hunterName:"", height:"", weight:"", goal:"", photo:null, style:"gym", plan:[[], [], [], [], [], [], []], ex:{}, hero:"male"}; }
 function renderOnboarding(){
   const o = UI.onb = UI.onb || blankOnb(); let body = ""; const N = 5;
   document.documentElement.dataset.theme = "gold";
   if (o.step === 0) body = `<div class="welcome">${hunterStage("welcome-stage", {mode:"hero", interactive:true})}
-      <div class="w-copy"><h1>Train in real life.<br>Level up here.</h1><p class="mute">Log every set, earn XP, and watch a 3D hunter evolve with your training.</p></div></div>
+      <div class="w-copy"><h1>Train in real life.<br>Level up here.</h1><p class="mute">Log every set, earn XP, rank up, and grow an aura that shows how hard you train.</p></div></div>
       <button class="btn" data-act="onb-next">Create my hunter</button><div class="grid2"><button class="btn ghost" data-act="restore">Restore backup</button><button class="btn ghost" data-act="demo">Try demo data</button></div>`;
   if (o.step === 1) body = `<div class="grow"><h1>Your profile</h1>
       <div class="center"><button class="ava lg" data-act="photo" aria-label="Add a photo">${o.photo ? `<img src="${o.photo}" alt="">` : ICON.camera}</button><div class="tiny mute">Optional photo</div></div>
@@ -475,10 +383,10 @@ function renderOnboarding(){
     body = `<div class="grow"><h1>Choose your exercises</h1><p class="mute sm">They show up on the days you train each muscle. Change them any time.</p>
       ${used.map(m => `<section class="card"><h3>${m}</h3><div class="chips">${optsFor(m, o.style).map(e => `<button class="chip ${o.ex[m].includes(e) ? "on" : ""}" data-act="onb-ex" data-m="${m}" data-e="${esc(e)}">${esc(e)}</button>`).join("")}</div></section>`).join("")}</div>
       <button class="btn" data-act="onb-next">Next</button>`; }
-  if (o.step === 5) body = `<div class="grow"><h1>Create your hunter</h1><p class="mute sm">Your hunter starts untrained and evolves from the sets you log. Rare and epic items unlock later.</p>
-      <section class="studio onb-studio">${hunterStage("studio-stage", {mode:"hero", interactive:true, view: UI.view || "front"})}
-      <div class="view-btns">${VIEW_BTNS.map(([k, l]) => `<button class="${(UI.view || "front") === k ? "on" : ""}" data-act="view" data-v="${k}">${l}</button>`).join("")}</div></section>
-      ${panelLook(null, "onb")}</div><button class="btn" data-act="onb-next">Start my journey</button>`;
+  if (o.step === 5) body = `<div class="grow"><h1>Choose your hunter</h1><p class="mute sm">Your aura grows as you train. You can switch hunter later.</p>
+      <div class="hero-pick">${HEROES.map(([k, n]) => `<button class="hp ${o.hero === k ? "on" : ""}" data-act="onb-hero" data-v="${k}" aria-pressed="${o.hero === k}"><img src="assets/hero/${k}.png" alt="${n}"><b>${n}</b></button>`).join("")}</div>
+      <div class="opt"><label class="opt-l" for="hn">Hunter name</label><input id="hn" class="input" maxlength="18" data-hn value="${esc(o.hunterName)}" placeholder="${esc(o.name || "Your hunter")}"></div></div>
+      <button class="btn" data-act="onb-next">Start my journey</button>`;
   $("#app").innerHTML = `<div class="onb">${o.step ? `<div class="steps" aria-label="Step ${o.step} of ${N}">${Array.from({length:N}, (_, i) => `<i class="${o.step >= i + 1 ? "on" : ""}"></i>`).join("")}</div>` : ""}${body}</div>`;
   mountStage();
 }
@@ -490,9 +398,9 @@ function onbNext(){
   if (o.step === 5){
     const t = TODAY();
     S = migrate({theme:"gold", profile:{name:o.name.trim(), photo:o.photo, height:+o.height || 0, startWeight:+o.weight, goal:+o.goal || +o.weight, startDate:t},
-      planHistory:[{from:t, plan:o.plan}], exercises:o.ex, logs:{}, weights:[{date:t, kg:+o.weight}], style:o.style, path:"solo", look:o.look, owned:[], ownedV2:true,
+      planHistory:[{from:t, plan:o.plan}], exercises:o.ex, logs:{}, weights:[{date:t, kg:+o.weight}], style:o.style, path:"solo", hero:o.hero || "male",
       hunterName: (o.hunterName || "").trim() || o.name.trim()});
-    const C0 = compute(); S.seen = {level:C0.level, skills:[]}; S.seenEvo = C0.evo[0];
+    const C0 = compute(); S.seen = {level:C0.level, skills:[]};
     UI.onb = null; UI.tab = "home"; save(); render(); scrollTo(0, 0); toast("The System has registered you");
     if (CLOUD_ON && Cloud.session){ Sync.run(); refreshAccount().then(() => render()).catch(() => {}); }
     return;
@@ -501,16 +409,8 @@ function onbNext(){
 }
 
 /* ---------------- CEREMONY + CARDS ---------------- */
-const queueBase = queueCeremonies;
-queueCeremonies = function(before, C){
-  const prevEvo = S.seenEvo ?? (S.seen ? evoOf(S.seen.level)[0] : C.evo[0]);
-  const r = queueBase(before, C);
-  if (C.evo[0] > prevEvo) UI.queue.push({evo: C.evo});
-  S.seenEvo = Math.max(prevEvo, C.evo[0]); save();
-  return r;
-};
 /* Cinematic ceremonies: energy gathers, impact, then the result. Colours follow the hunter's rank. */
-const RANK_COL = {E:"#AEB4BD", D:"#5FBF8F", C:"#5E9BE6", B:"#A77BEA", A:"#E5B24A", S:"#FF5A3C"};
+const RANK_COL = {E:"#AEB4BD", D:"#5FBF8F", C:"#5E9BE6", B:"#A77BEA", A:"#E5B24A", S:"#FF5A3C", SS:"#FFE3A0", SSS:"#9B62FF", ASC:"#CFEFFF"};
 function cineOpen(inner, col, cls){
   $("#cer").innerHTML = `<div class="cer cine ${cls || ""}" role="dialog" aria-modal="true" style="--cc:${col}"><div class="cine-veil"></div><div class="cine-core">${inner}</div><button class="btn cine-go" data-act="cer-close">Continue</button></div>`;
 }
@@ -530,15 +430,12 @@ function ceremony(p){
   if (p.reward) return rewardCeremony(p.reward);
   const emb = h => `<div class="cine-emb"><div class="cine-rays"></div>${h}</div>`;
   let inner, col = FX.accent(), big = false, onHit = null;
-  if (p.skill){ const u = p.skill; inner = `${emb(hexBadge("★", 116, "cer-hex"))}<div class="k">Skill unlocked</div><div class="cer-t">${esc(nodeLabel(u.ex, u.target))}</div><p>+${XP.skill} XP and 3 crystals.</p>`; }
-  else if (p.evo){ big = true; inner = `${emb(`<div class="stage cer-stage" data-stage='{"mode":"hero","interactive":false}'></div>`)}<div class="k">Evolution</div><div class="cer-t">${p.evo[1]} form</div><p>${esc(p.evo[2])}</p>`;
-    onHit = () => { try { window.Hunter3D.setCharged(true, auraKey(curLook())); window.Hunter3D.burst(auraKey(curLook())); } catch(e){} }; }
+  if (p.skill){ const u = p.skill; inner = `${emb(hexBadge("★", 116, "cer-hex"))}<div class="k">Skill unlocked</div><div class="cer-t">${esc(nodeLabel(u.ex, u.target))}</div><p>+${XP.skill} XP.</p>`; }
   else { const rankUp = p.rank[0] !== p.prevRank[0]; col = RANK_COL[p.rank[1]] || col; big = rankUp;
-    inner = rankUp ? `${emb(hexBadge(p.rank[1], 136, "cer-hex"))}<div class="k">New rank</div><div class="cer-t">${p.rank[2]}</div><p>${p.rank[3]} +5 crystals.</p>`
+    inner = rankUp ? `${emb(hexBadge(p.rank[1], 136, "cer-hex"))}<div class="k">New rank</div><div class="cer-t">${p.rank[2]}</div><p>${p.rank[3]} Your aura becomes ${AURA_NAME[p.rank[1]].toLowerCase()}.</p>`
       : `${emb(hexBadge(String(p.prevLevel || p.level), 124, "cer-hex"))}<div class="k">Level up</div><div class="cer-t">Level ${p.level}</div><p>${nf(200 + 50 * p.level)} XP to the next level.</p>`;
     if (!rankUp && p.prevLevel) onHit = () => FX.count(".cine-emb .hexb b", p.prevLevel, p.level, 420); }
   cineOpen(inner, col, big ? "big" : "");
-  if (p.evo){ const app = $("#app .stage"); if (app) app.classList.remove("stage"); mountStage(); }
   if (FX.reduced){ const n = $(".cine-emb .hexb b"); if (n && p.level && !big) n.textContent = p.level; SFX.level(); buzz([80, 60, 240]); return; }
   cineImpact(col, big, onHit);
 }
@@ -546,7 +443,6 @@ function rewardCeremony(r){
   const col = FX.accent();
   cineOpen(`<div class="k">Workout complete</div>
     <div class="rw-xp"><span class="num">+<span id="rw-n">${FX.reduced ? nf(r.tot) : 0}</span></span><small>XP</small></div>
-    ${r.gained > 0 ? `<span class="rw-cry">${CRY} +${r.gained} crystals</span>` : ""}
     <ul class="rw-list">${r.items.map((i, n) => `<li style="--i:${n}"><span>${esc(i[0])}</span><b>+${i[1]}</b></li>`).join("")}</ul>
     ${r.prs.length ? `<div class="rw-prs" style="--i:${r.items.length}">${r.prs.map(e => `<span>New best: ${esc(e)}</span>`).join("")}</div>` : ""}
     <div class="rw-lv" style="--i:${r.items.length + 1}"><div class="row between"><span>Level ${r.lv0}</span><span>${r.up ? "Level up" : `${nf(r.left)} XP to level ${r.lv0 + 1}`}</span></div>
@@ -571,13 +467,14 @@ async function makeCard(kind){
   x.textAlign = "center"; x.fillStyle = v("--acc"); x.font = `600 30px ${DF}`; x.fillText("Ascendant", W / 2, 96);
   let g, lw, wk;
   if (kind === "week"){ wk = addDays(mondayOf(todayD()), -7); lw = weekStats(C, wk); g = gradeOf(lw); }
-  const shot = kind !== "week" && window.Hunter3D && window.Hunter3D.supported ? await window.Hunter3D.snapshot(640, 860).catch(() => null) : null;
-  if (shot) await new Promise(res => { const im = new Image(); im.onload = () => { x.drawImage(im, W / 2 - 320, 130, 640, 860); res(); }; im.onerror = res; im.src = shot; });
-  else { x.fillStyle = v("--ink"); x.font = `700 ${kind === "week" ? 360 : 300}px ${NF}`; x.fillText(kind === "week" ? g : C.rank[1], W / 2, 640); }
+  const art = kind !== "week" ? await Hero2D.art(S.hero).catch(() => null) : null;
+  if (art){ const ac = Hero2D.PALETTES[C.rank[1]].main, gl = x.createRadialGradient(W / 2, 640, 40, W / 2, 640, 520); gl.addColorStop(0, ac + "66"); gl.addColorStop(1, ac + "00"); x.fillStyle = gl; x.fillRect(0, 120, W, 900);
+    x.drawImage(art, W / 2 - 300, 130, 600, 900); }
+  if (!art){ x.fillStyle = v("--ink"); x.font = `700 ${kind === "week" ? 360 : 300}px ${NF}`; x.fillText(kind === "week" ? g : C.rank[1], W / 2, 640); }
   x.fillStyle = v("--ink"); x.font = `700 72px ${DF}`; x.fillText(kind === "week" ? `Grade ${g}` : (S.hunterName || S.profile.name), W / 2, 1040);
   x.fillStyle = v("--mute"); x.font = `500 32px ${BF}`;
   x.fillText(kind === "week" ? `@${S.profile.name}, week of ${short(keyOf(wk))}` : `@${S.profile.name}, ${C.rank[2]} rank, level ${C.level}`, W / 2, 1092);
-  const stats = kind === "week" ? [[`${lw.plannedDone}/${lw.planned}`, "Planned days"], [lw.sets, "Sets"], [lw.beats, "Bests beaten"]] : [[C.streak, "Day streak"], [C.workouts, "Workouts"], [C.evo[1], "Form"]];
+  const stats = kind === "week" ? [[`${lw.plannedDone}/${lw.planned}`, "Planned days"], [lw.sets, "Sets"], [lw.beats, "Bests beaten"]] : [[C.streak, "Day streak"], [C.workouts, "Workouts"], [Math.round(C.aura * 100) + "%", "Aura"]];
   stats.forEach((s, i) => { const sx = 200 + i * 340, sy = 1205; x.fillStyle = v("--surface"); roundRect(x, sx - 150, sy - 66, 300, 132, 22); x.fill();
     x.fillStyle = i === 1 ? v("--acc") : v("--ink"); x.font = `700 60px ${NF}`; x.fillText(String(s[0]), sx, sy + 10); x.fillStyle = v("--mute"); x.font = `500 24px ${BF}`; x.fillText(s[1], sx, sy + 46); });
   return c.toDataURL("image/png");
@@ -606,15 +503,6 @@ function reportCard(){
     <p class="tiny mute">Grade S needs every planned day plus 3 or more bests beaten.</p>
     <div class="grid2"><button class="btn ghost" data-act="close">Close</button><button class="btn" data-act="share-week">${ICON.share}Share</button></div>`);
 }
-function passSheet(){
-  const pr = (UI.products || []).find(p => p.id === "pass");
-  modal(`<h2>Ascendant Pass</h2><div class="price num">${pr ? "₹" + pr.amount_paise / 100 : PASS_PRICE}</div><p class="sm mute">One payment. No subscription.</p>
-    <ul class="ticks">${["Every rare and epic item, now and future", "Free body and face redesigns", "All themes", "Supports an independent app from Bokaro"].map(f => `<li>${ICON.check}<span>${f}</span></li>`).join("")}</ul>
-    <p class="tiny mute">Legendary items are still earned by level, and nothing in the Pass affects guild rankings.</p>
-    ${CLOUD_ON && !S.demo ? `<button class="btn" data-act="ac-buy" data-v="pass">Buy the Pass</button><p class="tiny mute">Secure payment by Razorpay: UPI, cards, net banking.</p>`
-      : `<p class="sm warn">Purchases need a signed-in Ascendant account.</p><button class="btn ghost" data-act="close">Close</button>`}`);
-}
-
 /* ---------------- ACTIONS ---------------- */
 function finish(){
   const t = TODAY(), L = S.logs[t]; delete S.logs[t]; const before = compute(); S.logs[t] = L;
@@ -628,10 +516,10 @@ function finish(){
   const newSkills = queueCeremonies(before, C);
   newSkills.forEach(u => items.push([`Skill: ${nodeLabel(u.ex, u.target)}`, XP.skill]));
   if (C.weekBonus[wk] && !before.weekBonus[wk]) items.push(["Full week completed", C.weekBonus[wk]]);
-  const tot = C.xp - before.xp, gained = C.crystals - before.crystals;
+  const tot = C.xp - before.xp;
   const prs = L.entries.filter(e => { const b = bestSet(e.ex, e.sets), bb = bestBefore(e.ex, t); return b && bb && b.score > bb.score + 1e-9; }).map(e => e.ex);
   const pct = c => c.level >= 60 ? 100 : Math.round(c.into / c.need * 100), up = C.level > before.level;
-  UI.queue = UI.queue || []; UI.queue.unshift({reward: {tot, gained, items, prs, lv0: before.level, up, p0: pct(before), p1: up ? 100 : pct(C), left: C.need - C.into}});
+  UI.queue = UI.queue || []; UI.queue.unshift({reward: {tot, items, prs, lv0: before.level, up, p0: pct(before), p1: up ? 100 : pct(C), left: C.need - C.into}});
   UI.justTrained = true;
   render(); scheduleReminders(); UI.board = {}; nextCeremony();
 }
@@ -643,24 +531,6 @@ function addExercise(){
 }
 function trainAnyway(){ modal(`<h2>What are you training?</h2><div class="chips">${MUSCLES.map(m => `<button class="chip" data-act="extra" data-m="${m}">${m}</button>`).join("")}</div>`); }
 function goDay(k){ const d = fromKey(k); UI.trainTab = "today"; UI.tab = "train"; UI.weekOff = Math.round((mondayOf(d) - mondayOf(todayD())) / (7 * 864e5)); UI.sel = wd(d); }
-function itemTap(id){
-  const it = CAT[id], C = compute(); if (!it) return;
-  if (UI.previewKind === "identity") return toast("Save or discard your body change first");
-  if (it.slot === "theme"){ if (owns(id, C.level)){ S.theme = it.key; UI.previewItem = null; save(); render(); return; }
-    UI.previewItem = id; UI.previewKind = "item"; UI.preview = null; UI.tab = UI.tab === "settings" ? "hunter" : UI.tab; UI.htab = UI.htab || "shop"; render(); return; }
-  const patch = lookPatch(it, curLook());
-  if (owns(id, C.level)){ Object.assign(S.look, lookPatch(it, S.look)); UI.preview = null; UI.previewItem = null; UI.previewKind = null; save(); render(); return; }
-  UI.preview = patch; UI.previewItem = id; UI.previewKind = "item"; render();
-}
-function onbItem(id){
-  const it = CAT[id]; if (!it) return; if (it.cost || it.earn) return toast(`${it.name} unlocks after you start`);
-  Object.assign(UI.onb.look, lookPatch(it, UI.onb.look)); renderOnboarding();
-}
-function setIdentity(look, f, v){
-  look[f] = f === "skin" ? +v : v;
-  if (f === "gender"){ if (v === "female"){ look.beard = "none"; if (look.top === "none") look.top = "tank"; } else if (look.top === "sportsbra") look.top = "tank"; }
-}
-
 document.addEventListener("click", async e => {
   const b = e.target.closest("[data-act]"); if (!b) return;
   const a = b.dataset.act, v = b.dataset.v;
@@ -668,34 +538,13 @@ document.addEventListener("click", async e => {
     case "close-scrim": if (e.target === b) closeModal(); return;
     case "close": closeModal(); return;
     case "set-font": S.settings.font = v === "default" ? "" : v; save(); render(); toast("Font changed"); return;
-    case "tab": if (UI.editKey) return toast("Save or discard your log edit first"); UI.tab = v; if (v === "train"){ UI.weekOff = 0; UI.sel = wd(todayD()); }
-      if (v !== "hunter"){ UI.preview = null; UI.previewItem = null; UI.previewKind = null; } render(); scrollTo(0, 0); return;
+    case "tab": if (UI.editKey) return toast("Save or discard your log edit first"); UI.tab = v; if (v === "train"){ UI.weekOff = 0; UI.sel = wd(todayD()); } render(); scrollTo(0, 0); return;
     case "train-tab": UI.trainTab = v; render(); return;
     case "htab": UI.tab = "hunter"; UI.htab = v; render(); return;
-    case "open-shop": UI.tab = "hunter"; UI.htab = "shop"; render(); scrollTo(0, 0); return;
     case "open-badges": UI.tab = "hunter"; UI.htab = "badges"; render(); scrollTo(0, 0); return;
-    case "lcat": UI.lcat = v; if (UI.onb) renderOnboarding(); else render(); return;
-    case "ctarget": UI.colorTarget = v; render(); return;
-    case "view": UI.view = v; document.querySelectorAll(".view-btns button").forEach(x => x.classList.toggle("on", x.dataset.v === v)); if (window.Hunter3D) window.Hunter3D.view(v); return;
-    case "item": itemTap(v); return;
-    case "onb-item": onbItem(v); return;
-    case "onb-look": setIdentity(UI.onb.look, b.dataset.f, v); renderOnboarding(); return;
-    case "id-set": { const f = b.dataset.f; if (UI.previewKind === "item"){ UI.preview = null; UI.previewItem = null; }
-      const tmp = Object.assign({}, S.look, UI.preview || {}); setIdentity(tmp, f, v);
-      const diff = {}; ["gender", "skin", "face", "jaw", "nose", "eyes", "brows", "build", "beard", "top"].forEach(k => { if (tmp[k] !== S.look[k]) diff[k] = tmp[k]; });
-      UI.preview = Object.keys(diff).length ? diff : null; UI.previewKind = UI.preview ? "identity" : null; render(); return; }
-    case "save-identity": { const C = compute(); if (!hasPass() && C.crystals < REDESIGN_COST){ toast(`You need ${REDESIGN_COST} crystals`); UI.htab = "shop"; render(); return; }
-      if (!hasPass()) S.wallet.spent += REDESIGN_COST; Object.assign(S.look, UI.preview); UI.preview = null; UI.previewKind = null; save(); render(); SFX.done(); toast("Hunter redesigned"); return; }
-    case "cancel-preview": UI.preview = null; UI.previewItem = null; UI.previewKind = null; render(); return;
-    case "buy-item": { const it = CAT[v], C = compute(); if (!it || it.earn) return;
-      if (C.crystals < it.cost){ toast(`You need ${it.cost} crystals, you have ${C.crystals}`); UI.htab = "shop"; render(); return; }
-      S.wallet.spent += it.cost; if (!S.owned.includes(v)) S.owned.push(v);
-      if (it.slot === "theme") S.theme = it.key; else Object.assign(S.look, lookPatch(it, S.look));
-      UI.preview = null; UI.previewItem = null; UI.previewKind = null; save(); render(); SFX.set(); toast(`${it.name} unlocked`); return; }
-    case "buy-pack": { const pk = PACKS[0], C = compute(); if (C.crystals < pk.cost){ toast(`You need ${pk.cost} crystals, you have ${C.crystals}`); return; }
-      S.wallet.spent += pk.cost; pk.items.forEach(id => { if (!S.owned.includes(id)) S.owned.push(id); });
-      Object.assign(S.look, {top:"hoodie", bottom:"joggers", shoes:"high", topColor:"onyx", bottomColor:"onyx"}); save(); render(); SFX.done(); toast(`${pk.name} unlocked`); return; }
-    case "pass": passSheet(); return;
+    case "set-hero": S.hero = v; save(); render(); return;
+    case "set-theme": S.theme = v; save(); render(); return;
+    case "onb-hero": UI.onb.hero = v; renderOnboarding(); return;
     case "go-today": { if (UI.editKey) return toast("Save or discard your log edit first"); goDay(TODAY()); render(); scrollTo(0, 0);
       if (!musclesOn(TODAY()).length && !(S.logs[TODAY()] && S.logs[TODAY()].type === "workout")) trainAnyway(); return; }
     case "open-day": goDay(b.dataset.k); render(); scrollTo(0, 0); return;
@@ -769,8 +618,8 @@ document.addEventListener("click", async e => {
     case "restore": restoreSheet(); return;
     case "restore-file": $("#restore").click(); return;
     case "restore-paste": restoreFrom($("#paste").value.trim()); return;
-    case "confirm-restore": S = migrate(UI.restore); if (!S.seen){ const C0 = compute(); S.seen = {level:C0.level, skills:C0.skills.unlocked.map(skId)}; S.seenEvo = C0.evo[0]; } UI.restore = null; UI.onb = null; UI.achInit = false; save(); closeModal(); UI.tab = "home"; render(); toast("Backup restored"); return;
-    case "demo": if (CLOUD_ON) STORE_KEY = KEY + ":demo"; UI.auth = null; S = demoState(); S.demo = true; S.hunterName = "Demo Hunter"; { const C0 = compute(); S.seen = {level:C0.level, skills:C0.skills.unlocked.map(skId)}; S.seenEvo = C0.evo[0]; }
+    case "confirm-restore": S = migrate(UI.restore); if (!S.seen){ const C0 = compute(); S.seen = {level:C0.level, skills:C0.skills.unlocked.map(skId)}; } UI.restore = null; UI.onb = null; UI.achInit = false; save(); closeModal(); UI.tab = "home"; render(); toast("Backup restored"); return;
+    case "demo": if (CLOUD_ON) STORE_KEY = KEY + ":demo"; UI.auth = null; S = demoState(); S.demo = true; S.hunterName = "Demo Hunter"; { const C0 = compute(); S.seen = {level:C0.level, skills:C0.skills.unlocked.map(skId)}; }
       UI.onb = null; UI.achInit = false; save(); UI.tab = "home"; UI.period = "week"; render(); scrollTo(0, 0); toast("Demo data loaded"); return;
     case "reset":
       if (S && S.demo){ try { localStorage.removeItem(STORE_KEY); } catch(err){} S = null; STORE_KEY = KEY; UI.onb = null; UI.tab = "home";
