@@ -33,6 +33,8 @@ function render(){
 }
 
 /* stage bridge (works in onboarding too) */
+/* which anime aura plays after training: the equipped aura, otherwise the Shadow Monarch blue */
+const auraKey = L => (L && L.aura && L.aura !== "none") ? L.aura : "monarch";
 async function mountStage(){
   const el = document.querySelector(".stage"); if (!el) return;
   const api = window.Hunter3D;
@@ -48,8 +50,8 @@ async function mountStage(){
     await api.setLook(L);
     if (!el.isConnected) return;
     if (S && !UI.onb && !UI.auth){ const C = compute(); api.setBody({level: C.level, stages: C.body.stages});
-      const a = CAT["aura:" + L.aura]; api.setAura(a && a.hex, a && a.key !== "none" ? Math.max(0.4, C.aura) : 0);
-      const tl = S.logs[TODAY()], trained = !!(tl && tl.type === "workout" && tl.saved && daySets(tl)), fxc = (a && a.key !== "none" && a.hex) || FX.accent();
+      const a = CAT["aura:" + L.aura]; api.setAura(a && a.hex, a && a.key !== "none" ? Math.max(0.4, C.aura) : 0, L.aura);
+      const tl = S.logs[TODAY()], trained = !!(tl && tl.type === "workout" && tl.saved && daySets(tl)), fxc = auraKey(L);
       const charged = trained && (UI.tab === "home" || el.classList.contains("cer-stage"));
       api.setCharged(charged, fxc);
       if (charged && UI.justTrained && !$("#cer").innerHTML){ UI.justTrained = false; api.burst(fxc); } }
@@ -530,7 +532,7 @@ function ceremony(p){
   let inner, col = FX.accent(), big = false, onHit = null;
   if (p.skill){ const u = p.skill; inner = `${emb(hexBadge("★", 116, "cer-hex"))}<div class="k">Skill unlocked</div><div class="cer-t">${esc(nodeLabel(u.ex, u.target))}</div><p>+${XP.skill} XP and 3 crystals.</p>`; }
   else if (p.evo){ big = true; inner = `${emb(`<div class="stage cer-stage" data-stage='{"mode":"hero","interactive":false}'></div>`)}<div class="k">Evolution</div><div class="cer-t">${p.evo[1]} form</div><p>${esc(p.evo[2])}</p>`;
-    onHit = () => { try { window.Hunter3D.setCharged(true, col); window.Hunter3D.burst(col); } catch(e){} }; }
+    onHit = () => { try { window.Hunter3D.setCharged(true, auraKey(curLook())); window.Hunter3D.burst(auraKey(curLook())); } catch(e){} }; }
   else { const rankUp = p.rank[0] !== p.prevRank[0]; col = RANK_COL[p.rank[1]] || col; big = rankUp;
     inner = rankUp ? `${emb(hexBadge(p.rank[1], 136, "cer-hex"))}<div class="k">New rank</div><div class="cer-t">${p.rank[2]}</div><p>${p.rank[3]} +5 crystals.</p>`
       : `${emb(hexBadge(String(p.prevLevel || p.level), 124, "cer-hex"))}<div class="k">Level up</div><div class="cer-t">Level ${p.level}</div><p>${nf(200 + 50 * p.level)} XP to the next level.</p>`;

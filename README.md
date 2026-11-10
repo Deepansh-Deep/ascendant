@@ -186,3 +186,12 @@ Re-run `supabase/schema.sql` in the SQL editor after pulling this version. It is
 - **Rank name glow**: `.glow[data-rank]`, stronger at every rank from E to S. The Ranks list in Settings previews each one.
 - **Charged hunter**: after a saved workout the Home hunter carries a flame aura for the rest of the day and bursts once (`setCharged`, `burst` in `hunter3d.js`).
 - Sounds are synthesised (`synth()` in `core.js`), no audio files.
+
+## Anime render (2.3.0)
+
+`www/js/hunter3d_post.js` turns the 3D hunter into a 2D anime look:
+- **Cel shading** (`toonify`) on every character material: two hard light bands, a cool shadow tint, a thin highlight.
+- **Ink lines** from a normals pass: the silhouette plus creases.
+- **Ki aura traced from the body outline**, not a plane behind it: blurred silhouette, pulled upward by noise into flame tongues, with a white core, coloured band and dark outer edge. Three styles in `AURA_STYLES`: flame (DBZ), shadow with smoke (Solo Leveling), spirit with sparks (Ultra Instinct). Each aura cosmetic maps to one; with no aura equipped the post-workout aura is the blue "monarch".
+- Eyes glow with the aura while charged.
+- `ANIME = true` in `hunter3d.js` switches all of this; set it to false for the old realistic render.

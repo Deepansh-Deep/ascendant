@@ -1,9 +1,12 @@
 // ASCENDANT 3D hunter engine. Real skinned, morphable GLB characters (CC0 MakeHuman base).
 import * as THREE from '../vendor/three-bundle.js';
+import { AnimePost, toonify, AURA_STYLES } from './hunter3d_post.js';
 const { GLTFLoader, RoomEnvironment } = THREE;
 
 const BASE = new URL('../assets/hunter/', import.meta.url).href;
 const REDUCED = matchMedia('(prefers-reduced-motion: reduce)').matches;
+const ANIME = true;
+const LOW = (navigator.hardwareConcurrency || 4) <= 4 || (navigator.deviceMemory || 4) <= 3;
 
 export const SKIN_TONES = ['#EBCBB6', '#DDB39A', '#C99A7E', '#B08064', '#93664C', '#76503B', '#5A3B2B', '#3F291E'];
 export const HAIR_COLORS = { black: '#1A1716', espresso: '#3A2A20', brown: '#4E3423', chestnut: '#6E3F22', auburn: '#7D3220', blonde: '#B8925A', ash: '#8F8A82', silver: '#C9C7C2', crimson: '#7E1C24', azure: '#23406E' };
@@ -45,8 +48,9 @@ class HunterEngine {
     const r = this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true, powerPreference: 'low-power', preserveDrawingBuffer: false });
     r.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.75));
     r.outputColorSpace = THREE.SRGBColorSpace;
-    r.toneMapping = THREE.ACESFilmicToneMapping; r.toneMappingExposure = 1.05;
+    r.toneMapping = THREE.NeutralToneMapping; r.toneMappingExposure = 1.0;
     r.shadowMap.enabled = true; r.shadowMap.type = THREE.PCFShadowMap;
+    r.shadowMap.autoUpdate = false;
     const scene = this.scene = new THREE.Scene();
     const pmrem = new THREE.PMREMGenerator(r);
     scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
@@ -63,18 +67,13 @@ class HunterEngine {
 
     // ground: shadow catcher + subtle aura disc
     const g = new THREE.Mesh(new THREE.CircleGeometry(1.4, 64), new THREE.ShadowMaterial({ opacity: 0.42 }));
-    g.rotation.x = -Math.PI / 2; g.receiveShadow = true; scene.add(g);
+    g.rotation.x = -Math.PI / 2; g.receiveShadow = true; scene.add(g); this.ground = g;
     const discTex = this._radialTexture();
     this.aura = new THREE.Mesh(new THREE.CircleGeometry(0.9, 64), new THREE.MeshBasicMaterial({ map: discTex, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, color: 0xd4a84f, opacity: 0 }));
     this.aura.rotation.x = -Math.PI / 2; this.aura.position.y = 0.002; scene.add(this.aura);
     this.motes = this._motes(); scene.add(this.motes);
-    // charged aura (after a workout) and burst (level up, workout saved): energy column, back glow, ground shockwave
-    this.column = this._auraColumn(); scene.add(this.column);
-    this.halo = new THREE.Sprite(new THREE.SpriteMaterial({ map: discTex, color: 0xd4a84f, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending }));
-    this.halo.scale.set(2.3, 3.1, 1); this.halo.position.set(0, 1.0, -0.5); scene.add(this.halo);
-    this.shock = new THREE.Mesh(new THREE.RingGeometry(0.93, 1.0, 96), new THREE.MeshBasicMaterial({ color: 0xd4a84f, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide }));
-    this.shock.rotation.x = -Math.PI / 2; this.shock.position.y = 0.004; this.shock.visible = false; scene.add(this.shock);
     this._charge = 0; this._chargeT = 0; this._burst = 0; this._moteBase = 0; this._moteVis = false;
+    this.post = new AnimePost(r, LOW); this.post.setPalette(AURA_STYLES.monarch);
 
     this.root = new THREE.Group(); scene.add(this.root);
     this.loader = new GLTFLoader();
@@ -102,36 +101,6 @@ class HunterEngine {
     geo.setAttribute('position', new THREE.BufferAttribute(p, 3)); geo.setAttribute('seed', new THREE.BufferAttribute(s, 1));
     const m = new THREE.PointsMaterial({ size: 0.018, color: 0xd4a84f, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending, map: this._radialTexture() });
     const pts = new THREE.Points(geo, m); pts.visible = false; return pts;
-  }
-  // Flame aura: one layer behind the body (the silhouette glows and licks upward) and a faint layer of wisps in front.
-  _auraColumn() {
-    const geo = new THREE.PlaneGeometry(2.6, 3.2); geo.translate(0, 1.6, 0);
-    const make = (front) => new THREE.ShaderMaterial({ transparent: true, depthWrite: false, depthTest: !front, blending: THREE.AdditiveBlending,
-      uniforms: { uTime: { value: 0 }, uPow: { value: 0 }, uCol: { value: new THREE.Color(0xd4a84f) }, uFront: { value: front ? 1 : 0 } },
-      vertexShader: `varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
-      fragmentShader: `uniform float uTime; uniform float uPow; uniform float uFront; uniform vec3 uCol; varying vec2 vUv;
-        float hash(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
-        float noise(vec2 p){ vec2 i = floor(p); vec2 f = fract(p); f = f * f * (3.0 - 2.0 * f);
-          return mix(mix(hash(i), hash(i + vec2(1.0, 0.0)), f.x), mix(hash(i + vec2(0.0, 1.0)), hash(i + vec2(1.0, 1.0)), f.x), f.y); }
-        float fbm(vec2 p){ float v = 0.0; float a = 0.5; for (int i = 0; i < 4; i++){ v += a * noise(p); p = p * 2.03 + vec2(1.7, 9.2); a *= 0.5; } return v; }
-        void main(){
-          float x = (vUv.x - 0.5) * 2.6; float y = vUv.y * 3.2;
-          float n = fbm(vec2(x * 2.0, y * 1.5 - uTime * 1.5));
-          float n2 = fbm(vec2(x * 4.6 + 3.0, y * 2.6 - uTime * 2.7));
-          float w = mix(0.60, 0.40, smoothstep(0.0, 1.6, y)) * (1.0 - smoothstep(1.75, 2.75 + n * 0.5, y));
-          float d = abs(x) / max(w, 0.001) + (n - 0.5) * 0.7;
-          float core = 1.0 - smoothstep(0.5, 1.05, d);
-          float tongues = smoothstep(0.42, 0.85, n2) * (1.0 - smoothstep(0.6, 1.55, d));
-          float a = mix(core * 0.55 + tongues * 0.5, tongues * 0.22, uFront);
-          a *= smoothstep(0.0, 0.14, y) * (1.0 - smoothstep(1.85, 2.95, y + (n - 0.5) * 1.1));
-          a *= 1.0 - smoothstep(1.0, 1.3, abs(x));
-          a = pow(a, 1.45) * 1.9;
-          gl_FragColor = vec4(mix(uCol, vec3(1.0), core * core * 0.28 + tongues * 0.3), a * uPow);
-        }` });
-    const g = new THREE.Group();
-    const back = new THREE.Mesh(geo, make(false)); back.position.z = -0.3; back.renderOrder = -1;
-    const front = new THREE.Mesh(geo, make(true)); front.position.z = 0.42; front.renderOrder = 6;
-    g.add(back, front); g.visible = false; g.userData.mats = [back.material, front.material]; return g;
   }
   // Models normally ship as .glb. Hosts that cannot serve binary files get a JSON wrapper {"glb": base64} instead (config.modelExt = '.glb.json').
   async _loadGLB(gender) {
@@ -188,10 +157,19 @@ class HunterEngine {
         else m.material = new THREE.MeshPhysicalMaterial({ color: 0x2a2c30, roughness: 0.82, normalMap: this.tex.fabN, normalScale: new THREE.Vector2(0.35, 0.35), sheen: 0.5, sheenRoughness: 0.8, sheenColor: new THREE.Color(0x888888), polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1, side: THREE.DoubleSide });
         m.visible = ['body', 'eyes', 'lashes'].includes(name);
       }
+      // anime look: every character material is cel shaded; eyes can glow with the aura
+      for (const m of Object.values(model.meshes)) {
+        if (m.material === skin) continue;
+        if (m.material === model.mats.eyes) { m.material.emissive = new THREE.Color(0); m.material.emissiveIntensity = 1; continue; }
+        toonify(m.material, m.name.startsWith('hair_') || m.name.startsWith('beard_') ? { hi: 0.35, cut: 0.38 } : {});
+      }
+      if (ANIME) { skin.normalScale.set(0, 0); skin.sheen = 0; skin.clearcoat = 0; }
+      toonify(skin, { shadow: 0xc08a86, cut: 0.4, hi: 0.08 });
       // layered shell hair (fur shells): breaks the solid silhouette into strands
       model.fur = {};
       for (const [name, m] of Object.entries(model.meshes)) {
         if (!(name.startsWith('hair_') || name.startsWith('beard_'))) continue;
+        if (ANIME) continue;
         const beard = name.startsWith('beard_'), layers = beard ? 4 : 6, step = beard ? 0.0011 : 0.0016, base = beard ? 0.5 : 0.28;
         model.fur[name] = [];
         for (let i = 1; i <= layers; i++) {
@@ -215,6 +193,7 @@ class HunterEngine {
     return mat;
   }
   _hairMat() {
+    if (ANIME) return new THREE.MeshStandardMaterial({ color: 0x1a1412, roughness: 0.6, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1 });
     return new THREE.MeshPhysicalMaterial({ color: 0x1a1412, map: this.tex.hairS, normalMap: this.tex.hairN, normalScale: new THREE.Vector2(0.6, 0.6), roughness: 0.56, sheen: 0.3, sheenRoughness: 0.45, sheenColor: new THREE.Color(0x4a3c34), envMapIntensity: 0.55, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -3, polygonOffsetUnits: -3 });
   }
 
@@ -269,31 +248,31 @@ class HunterEngine {
   setBody(b) { this.body = b; this._applyMorphTargets(); this._kick(); }
   setPose(p) { if (POSES[p]) { this.pose = p; this._kick(); } }
   view(v) { const d = VIEWS[v]; if (!d) return; this.yawT = d.yaw; this.zoomT = d.zoom; this._kick(); }
-  setAura(color, level) {
-    if (!this.aura) return; this._auraLevel = level;
+  setAura(color, level, key) {
+    if (!this.aura) return; this._auraLevel = level; this._cosmetic = key && key !== 'none' ? level : 0; if (key && AURA_STYLES[key] && !this._chargeT) this._palette(key);
     const c = new THREE.Color(color || '#D4A84F');
     this.aura.material.color.copy(c); this.motes.material.color.copy(c);
-    this.aura.material.opacity = 0.08 + 0.42 * level;
+    this.aura.material.opacity = ANIME ? 0 : 0.08 + 0.42 * level;
     this._moteVis = level > 0.55 && !REDUCED; this._moteBase = this._moteVis ? 0.25 + 0.5 * (level - 0.55) : 0;
     this.motes.visible = this._moteVis; this.motes.material.opacity = this._moteBase;
     this.rim.color.copy(new THREE.Color(0x9fb7ff).lerp(c, 0.35 * level));
     this._kick();
   }
-  _fxColor(color) {
-    if (!color || !this.column) return; const c = new THREE.Color(color);
-    this.column.userData.mats.forEach(m => m.uniforms.uCol.value.copy(c)); this.halo.material.color.copy(c); this.shock.material.color.copy(c);
-    if (!this._moteVis) this.motes.material.color.copy(c);
+  _palette(p) {
+    const pal = typeof p === 'string' ? (AURA_STYLES[p] || AURA_STYLES.monarch) : (p || AURA_STYLES.monarch);
+    this.pal = pal; this.post.setPalette(pal);
+    const c = new THREE.Color(pal.main); this.motes.material.color.copy(c);
   }
-  // steady aura after training today
-  setCharged(on, color) { if (!this.column) return; this._chargeT = on ? 1 : 0; this._fxColor(color); this._kick(); }
-  // one-off surge: shockwave on the ground, flare, sparks
-  burst(color) { if (!this.column || REDUCED) return; this._fxColor(color); this._burst = 1; this._kick(); }
+  // steady aura after training today. p: aura key ('monarch', 'ember'...) or a palette object
+  setCharged(on, p) { if (!this.post) return; this._chargeT = on ? 1 : 0; if (p) this._palette(p); this._kick(); }
+  // one-off surge: the aura flares, eyes and rim flash
+  burst(p) { if (!this.post || REDUCED) return; if (p) this._palette(p); this._burst = 1; this._kick(); }
   on(fn) { this.listeners.add(fn); return () => this.listeners.delete(fn); }
   async snapshot(w = 720, h = 960) {
     await this.ready; if (!this.current) return null;
     const r = this.renderer, prevSize = r.getSize(new THREE.Vector2()), prevPR = r.getPixelRatio();
     r.setPixelRatio(1); r.setSize(w, h, false); this.camera.aspect = w / h; this._frame(); this.camera.updateProjectionMatrix();
-    r.render(this.scene, this.camera); const url = r.domElement.toDataURL('image/png');
+    this._draw(); const url = r.domElement.toDataURL('image/png');
     r.setPixelRatio(prevPR); r.setSize(prevSize.x, prevSize.y, false); this._resize();
     return url;
   }
@@ -386,6 +365,10 @@ class HunterEngine {
     c.addEventListener('dblclick', () => { this.zoomT = this.zoomT > 0.5 ? 0 : 1; this._kick(); });
   }
 
+  _draw() {
+    if (this.post && ANIME) this.post.render(this.scene, this.camera, [this.ground, this.aura, this.motes], this.time, this._pow || 0, this._e || 0);
+    else { this.renderer.shadowMap.needsUpdate = true; this.renderer.render(this.scene, this.camera); }
+  }
   _kick() { this._idleFrames = 0; if (!this._raf && this.renderer) this._raf = requestAnimationFrame(this._loop); }
 
   _loop(ts) {
@@ -431,19 +414,18 @@ class HunterEngine {
       model.scene.rotation.y = this.yaw;
     }
     // charged aura + burst
-    if (this.column) {
-      this._charge += (this._chargeT - this._charge) * (1 - Math.pow(0.02, dt));
-      if (this._burst > 0) this._burst = Math.max(0, this._burst - dt / 1.5);
-      const b = this._burst, e = b * b, ch = REDUCED ? 0 : this._charge;
-      const pow = ch * (0.8 + 0.12 * Math.sin(this.time * 2.1)) + e * 1.5;
-      this.column.visible = pow > 0.01; this.column.userData.mats.forEach(m => { m.uniforms.uTime.value = this.time; m.uniforms.uPow.value = pow; });
-      this.halo.material.opacity = Math.min(0.7, this._charge * 0.1 + e * 0.45);
-      if (b > 0) { const k = 1 - b, o = 1 - Math.pow(1 - k, 3); this.shock.visible = true; this.shock.scale.setScalar(0.25 + o * 2.2); this.shock.material.opacity = b * b * 0.9; } else this.shock.visible = false;
-      this.key.intensity = 2.4 + e * 3.2;
+    if (this.post) {
+      this._charge += (this._chargeT - this._charge) * (1 - Math.pow(0.03, dt));
+      if (this._burst > 0) this._burst = Math.max(0, this._burst - dt / 1.6);
+      const b = this._burst, e = b * b * (3 - 2 * b), ch = REDUCED ? Math.min(this._charge, 0.6) : this._charge;
+      this._pow = Math.max(ch * (0.92 + 0.08 * Math.sin(this.time * 2.3)), (this._cosmetic || 0) * 0.42) + e * 1.1;
+      this._e = e;
+      const eyes = model && model.mats.eyes; if (eyes && this.pal) { eyes.emissive.set(this.pal.core).lerp(new THREE.Color(this.pal.main), 0.35); eyes.emissiveIntensity = Math.min(1.4, ch * 0.9 + e * 1.2); }
+      this.key.intensity = 2.4 + e * 1.4;
       this.motes.visible = this._moteVis || ch > 0.05 || b > 0;
-      this.motes.material.opacity = Math.max(this._moteBase, 0.6 * ch + 0.4 * e);
-      this._moteSpeed = 1 + 3.5 * ch + 9 * e;
-      if (ch > 0.02 || b > 0 || Math.abs(this._chargeT - this._charge) > 0.01) changing = true;
+      this.motes.material.opacity = Math.max(this._moteBase, 0.5 * ch + 0.4 * e);
+      this._moteSpeed = 1 + 3 * ch + 8 * e;
+      if (this._pow > 0.01 || Math.abs(this._chargeT - this._charge) > 0.01) changing = true;
     }
     if (this.motes.visible) {
       const p = this.motes.geometry.attributes.position, s = this.motes.geometry.attributes.seed, ms = this._moteSpeed || 1;
@@ -454,7 +436,7 @@ class HunterEngine {
     this._odd = !this._odd;
     if (!changing && this._odd && !this.motes.visible) { this._raf = requestAnimationFrame(this._loop); return; }
     this._frame();
-    this.renderer.render(this.scene, this.camera);
+    this._draw();
     // keep animating only while something moves, idle animation runs at a gentle rate
     if (changing || !REDUCED) this._raf = requestAnimationFrame(this._loop);
   }

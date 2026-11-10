@@ -1,8 +1,8 @@
 // Ascendant offline cache. Bump VERSION on every release so phones pick up the update.
-const VERSION = "ascendant-2.2.0";
+const VERSION = "ascendant-2.3.0";
 const CORE = [
   "./", "./index.html", "./manifest.webmanifest", "./css/app.css",
-  "./js/config.js", "./js/core.js", "./js/ui.js", "./js/scoring.js", "./js/cloud.js", "./js/fx.js", "./js/views.js", "./js/account.js", "./js/boot.js", "./js/hunter3d.js", "./vendor/three-bundle.js",
+  "./js/config.js", "./js/core.js", "./js/ui.js", "./js/scoring.js", "./js/cloud.js", "./js/fx.js", "./js/views.js", "./js/account.js", "./js/boot.js", "./js/hunter3d.js", "./js/hunter3d_post.js", "./vendor/three-bundle.js",
   "./fonts/sora-variable.woff2", "./fonts/inter-variable.woff2", "./fonts/barlow-condensed-600.woff2", "./fonts/barlow-condensed-700.woff2",
   "./icons/icon-192.png", "./icons/icon-512.png", "./icons/maskable-512.png",
   "./assets/hunter/manifest.json", "./assets/hunter/skin_normal.png", "./assets/hunter/fabric_normal.png", "./assets/hunter/hair_strands.png", "./assets/hunter/hair_normal.png"
