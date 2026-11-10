@@ -1,12 +1,18 @@
 name: Release Android APK
 
-# Push a tag like v2.1.0 to publish a signed APK on GitHub Releases.
+# Publishes a signed APK on GitHub Releases. Runs when:
+#   - the app version in www/js/core.js changes on main (the release and its tag are created automatically), or
+#   - a tag like v3.3.0 is pushed, or it is started by hand from the Actions tab.
+# Skips if a release for this version already exists.
 # The website's download page and the app's update check pick it up automatically.
 # Needs four repository secrets (Settings > Secrets and variables > Actions):
 #   ANDROID_KEYSTORE_BASE64, ANDROID_KEYSTORE_PASSWORD, ANDROID_KEY_ALIAS, ANDROID_KEY_PASSWORD
 on:
   push:
     tags: [ 'v*' ]
+    branches: [ main ]
+    paths: [ 'www/js/core.js' ]
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -16,25 +22,37 @@ permissions:
 jobs:
   apk:
     runs-on: ubuntu-latest
+    outputs:
+      built: ${{ steps.ver.outputs.build }}
     steps:
       - uses: actions/checkout@v4
-      - name: Check version numbers match the tag
+      - name: Work out the version
+        id: ver
+        env: { GH_TOKEN: "${{ github.token }}" }
         run: |
-          TAG="${GITHUB_REF_NAME#v}"
-          grep -q "const VERSION = \"$TAG\"" www/js/core.js || { echo "www/js/core.js VERSION is not $TAG"; exit 1; }
+          V=$(sed -n 's/^const VERSION = "\([0-9.]*\)".*/\1/p' www/js/core.js)
+          [ -n "$V" ] || { echo "No VERSION in www/js/core.js"; exit 1; }
+          if [ "${{ github.ref_type }}" = "tag" ] && [ "${GITHUB_REF_NAME#v}" != "$V" ]; then echo "www/js/core.js VERSION is $V, tag is $GITHUB_REF_NAME"; exit 1; fi
+          echo "v=$V" >> "$GITHUB_OUTPUT"
+          if gh release view "v$V" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then echo "Release v$V already exists, nothing to do."; echo "build=false" >> "$GITHUB_OUTPUT"; else echo "build=true" >> "$GITHUB_OUTPUT"; fi
           [ -n "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" ] || { echo "Signing secrets are missing. See the README, 'Signing key'."; exit 1; }
       - uses: actions/setup-node@v4
+        if: steps.ver.outputs.build == 'true'
         with: { node-version: 22 }
       - uses: actions/setup-java@v4
+        if: steps.ver.outputs.build == 'true'
         with: { distribution: temurin, java-version: 21 }
       - uses: android-actions/setup-android@v3
+        if: steps.ver.outputs.build == 'true'
         with:
           packages: 'platform-tools platforms;android-36 build-tools;36.0.0'
       - name: Install and sync
+        if: steps.ver.outputs.build == 'true'
         run: |
           npm ci || npm install
           npx cap sync android
       - name: Build signed release APK
+        if: steps.ver.outputs.build == 'true'
         working-directory: android
         env:
           ASC_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
@@ -43,21 +61,26 @@ jobs:
         run: |
           echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 -d > "$RUNNER_TEMP/ascendant.jks"
           export ASC_KEYSTORE="$RUNNER_TEMP/ascendant.jks"
-          V="${GITHUB_REF_NAME#v}"; IFS=. read -r MA MI PA <<< "$V"
+          V="${{ steps.ver.outputs.v }}"; IFS=. read -r MA MI PA <<< "$V"
           export ASC_VERSION_NAME="$V" ASC_VERSION_CODE=$((MA*10000 + MI*100 + PA))
           chmod +x gradlew
           ./gradlew assembleRelease --no-daemon
           cp app/build/outputs/apk/release/app-release.apk "$GITHUB_WORKSPACE/ascendant-$V.apk"
           cp app/build/outputs/apk/release/app-release.apk "$GITHUB_WORKSPACE/ascendant.apk"
       - uses: softprops/action-gh-release@v2
+        if: steps.ver.outputs.build == 'true'
         with:
           files: |
             ascendant-*.apk
             ascendant.apk
+          tag_name: v${{ steps.ver.outputs.v }}
+          name: Ascendant ${{ steps.ver.outputs.v }}
+          target_commitish: ${{ github.sha }}
           generate_release_notes: true
 
   site:
     needs: apk
+    if: needs.apk.outputs.built == 'true'
     uses: ./.github/workflows/pages.yml
     permissions:
       contents: read

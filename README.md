@@ -94,7 +94,7 @@ Everything below is a one-time setup only you can do, because it needs your acco
    - Put the Project URL and the **anon** key in `www/js/config.js`. Never put the service_role key anywhere in this repo.
 4. **Make yourself owner.** Register in the app, then in the SQL editor: `update public.profiles set role = 'owner' where username = 'your_username';`
 5. **Contact details.** Fill in `site/site-config.js` with your email and phone.
-6. **Release the Android app.** Bump `VERSION` in `www/js/core.js` and `www/sw.js`, commit, then tag: `git tag v3.0.0 && git push --tags`. The release workflow builds a signed APK, attaches it to GitHub Releases and refreshes the website's download page and `version.json`, which installed apps check to offer the update.
+6. **Release the Android app.** Bump `VERSION` in `www/js/core.js` and `www/sw.js`, commit, then tag: `git push` (a changed VERSION on main publishes the release automatically; pushing a tag still works too)`. The release workflow builds a signed APK, attaches it to GitHub Releases and refreshes the website's download page and `version.json`, which installed apps check to offer the update.
 7. **First gym.** Admin > Create codes (30 free days), give the code to the gym owner, help him register the gym and share his join code.
 
 Free-tier warning: Supabase pauses free projects after a week without activity. Move to the paid plan (about $25 a month) before the first gym depends on it.

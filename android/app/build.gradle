@@ -1,7 +1,7 @@
 apply plugin: 'com.android.application'
 
-def ascVersionCode = (System.getenv('ASC_VERSION_CODE') ?: '30300').toInteger()
-def ascVersionName = System.getenv('ASC_VERSION_NAME') ?: '3.3.0'
+def ascVersionCode = (System.getenv('ASC_VERSION_CODE') ?: '30301').toInteger()
+def ascVersionName = System.getenv('ASC_VERSION_NAME') ?: '3.3.1'
 
 android {
     namespace = "com.ascendant.gym"
