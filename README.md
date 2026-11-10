@@ -61,6 +61,7 @@ Usernames are unique. Passwords are not checked for uniqueness on purpose: that 
 
 ### Replacing art
 - Characters: PNG or WebP, full body, front-facing, feet visible, transparent background (a plain single-colour background is keyed out automatically). The app crops to the character, so framing does not need to be exact. Current files are cut from single full-resolution renders (about 1500 to 1770 px tall) with rembg (isnet models), interiors filled solid and floor reflections trimmed at the sole line.
+- **Idle videos** (character moves, breathes, gestures): green screen video per outfit, `assets/hero/<key>.webm` and `.mp4`, keyed live in the shader. Register the outfit in `HERO_VIDEO` in `hero2d.js`. The matching `.webp` must be the video's first frame at the same framing (the app skips its usual crop for these). Build: mask the generator watermark, pad and crop to 854x1280 so the figure has room, crossfade the last 0.75 s into the start for a seamless loop, encode H.264 CRF 22 and VP9 CRF 30. Outfits without a video use the still.
 - Aura: any white or grey energy loop on pure black, vertical. Re-run the loop and encode commands from the 3.1 commit message to rebuild both files.
 - Bump `VERSION` in `www/js/core.js` and `www/sw.js` after changing art.
 

@@ -21,15 +21,21 @@ const Hero2D = (() => {
     ASC: {core: "#FFFFFF", main: "#BFE8FF", deep: "#3A5BFF", style: 2}
   };
   const OUTFITS = ["signature", "urban", "royal"];
+  /* outfits that have an idle video (green screen, framed exactly like their still): assets/hero/<key>.webm / .mp4 */
+  const HERO_VIDEO = {male_signature: true};
   const hex = h => { const n = parseInt(h.slice(1), 16); return [(n >> 16 & 255) / 255, (n >> 8 & 255) / 255, (n & 255) / 255]; };
 
   const VS = `attribute vec2 aP; varying vec2 vF; void main(){ vF = aP * 0.5 + 0.5; gl_Position = vec4(aP, 0.0, 1.0); }`;
   const FS = `precision highp float;
     varying vec2 vF;
-    uniform sampler2D tImg, tMask, tVid; uniform vec2 uRes; uniform vec4 uRect; uniform float uT, uPow, uCharge, uBurst, uBreath, uVid, uAsp;
+    uniform sampler2D tImg, tMask, tVid, tChar; uniform float uCV; uniform vec2 uRes; uniform vec4 uRect; uniform float uT, uPow, uCharge, uBurst, uBreath, uVid, uAsp;
     uniform vec3 uCore, uMain, uDeep;
     vec4 M(vec2 p){ if (p.x < 0.0 || p.x > 1.0 || p.y < 0.0 || p.y > 1.0) return vec4(0.0); return texture2D(tMask, p); }
-    vec4 I(vec2 p){ if (p.x < 0.0 || p.x > 1.0 || p.y < 0.0 || p.y > 1.0) return vec4(0.0); return texture2D(tImg, p); }
+    vec4 I(vec2 p){ if (p.x < 0.0 || p.x > 1.0 || p.y < 0.0 || p.y > 1.0) return vec4(0.0);
+      if (uCV < 0.5) return texture2D(tImg, p);
+      vec3 v = texture2D(tChar, p).rgb; float dom = v.g - max(v.r, v.b);   // green screen key with spill removal
+      float a = 1.0 - smoothstep(0.12, 0.35, dom); v.g = mix(v.g, min(v.g, max(v.r, v.b) * 1.02), step(a, 0.999));
+      return vec4(v * a, a); }
     float ring(float d, float r, float w){ return smoothstep(w, 0.0, abs(d - r)); }
     void main(){
       vec2 px = vF * uRes;
@@ -100,8 +106,8 @@ const Hero2D = (() => {
     gl.useProgram(prog);
     const buf = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, buf); gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]), gl.STATIC_DRAW);
     const loc = gl.getAttribLocation(prog, "aP"); gl.enableVertexAttribArray(loc); gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0);
-    ["tImg", "tMask", "tVid", "uRes", "uRect", "uT", "uPow", "uCharge", "uBurst", "uBreath", "uVid", "uAsp", "uCore", "uMain", "uDeep"].forEach(n => U[n] = gl.getUniformLocation(prog, n));
-    gl.uniform1i(U.tImg, 0); gl.uniform1i(U.tMask, 1); gl.uniform1i(U.tVid, 2);
+    ["tImg", "tMask", "tVid", "uRes", "uRect", "uT", "uPow", "uCharge", "uBurst", "uBreath", "uVid", "uAsp", "tChar", "uCV", "uCore", "uMain", "uDeep"].forEach(n => U[n] = gl.getUniformLocation(prog, n));
+    gl.uniform1i(U.tImg, 0); gl.uniform1i(U.tMask, 1); gl.uniform1i(U.tVid, 2); gl.uniform1i(U.tChar, 3);
     initVideo();
     cv.addEventListener("webglcontextlost", e => { e.preventDefault(); Object.keys(cache).forEach(k => delete cache[k]); gl = null; });
     document.addEventListener("visibilitychange", () => { if (!document.hidden) kick(); });
@@ -120,8 +126,22 @@ const Hero2D = (() => {
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array([0, 0, 0, 255]));
   }
-  function playVideo(){ if (!vid || REDUCED || st.still) return; vid.playbackRate = Math.min(1.3, 0.75 + 0.45 * Math.min(1, st.power + 0.2 * st.chargeT)); const pr = vid.play(); if (pr && pr.catch) pr.catch(() => {}); }
-  function pauseVideo(){ if (vid && !vid.paused) vid.pause(); }
+  let cvid = null, ctex = null, cvKey = null, cvOK = false;
+  function charVideo(key){
+    if (!HERO_VIDEO[key]){ if (cvid){ cvid.pause(); cvid.removeAttribute("src"); cvid.load(); } cvKey = null; cvOK = false; return; }
+    if (!cvid){ cvid = document.createElement("video"); cvid.muted = true; cvid.loop = true; cvid.playsInline = true; cvid.preload = "auto";
+      cvid.setAttribute("muted", ""); cvid.setAttribute("playsinline", ""); cvid.addEventListener("loadeddata", () => { cvOK = true; kick(); });
+      ctex = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D, ctex);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array([0, 0, 0, 0])); }
+    if (cvKey === key) return;
+    cvKey = key; cvOK = false;
+    cvid.src = "assets/hero/" + key + (cvid.canPlayType('video/webm; codecs="vp9"') ? ".webm" : ".mp4");
+  }
+  function playVideo(){ if (cvid && cvKey && !REDUCED && !st.still){ const q = cvid.play(); if (q && q.catch) q.catch(() => {}); }
+    if (!vid || REDUCED || st.still) return; vid.playbackRate = Math.min(1.3, 0.75 + 0.45 * Math.min(1, st.power + 0.2 * st.chargeT)); const pr = vid.play(); if (pr && pr.catch) pr.catch(() => {}); }
+  function pauseVideo(){ if (vid && !vid.paused) vid.pause(); if (cvid && !cvid.paused) cvid.pause(); }
   document.addEventListener("visibilitychange", () => { if (document.hidden) pauseVideo(); });
 
   /* load, key out a flat background if needed, crop to the character, pad to 2:3 with the feet near the bottom, build blurred outline masks */
@@ -141,6 +161,10 @@ const Hero2D = (() => {
             for (let i = 0; i < px.length; i += 4){ const dd = Math.hypot(px[i] - bg[0], px[i + 1] - bg[1], px[i + 2] - bg[2]); px[i + 3] = Math.round(255 * Math.min(1, Math.max(0, (dd - 18) / 26))); }
             x0.putImageData(d, 0, 0);
           }
+          if (HERO_VIDEO[hero]){ // already framed like its video: keep exactly as is
+            const c1 = c0, W = W0, H = H0;
+            return res(finish(c1, W, H));
+          }
           let minX = W0, minY = H0, maxX = 0, maxY = 0;
           for (let y = 0; y < H0; y += 2) for (let x = 0; x < W0; x += 2) if (px[(y * W0 + x) * 4 + 3] > 24){ if (x < minX) minX = x; if (x > maxX) maxX = x; if (y < minY) minY = y; if (y > maxY) maxY = y; }
           if (maxX <= minX) { minX = 0; minY = 0; maxX = W0 - 1; maxY = H0 - 1; }
@@ -149,20 +173,23 @@ const Hero2D = (() => {
           const H = Math.min(2048, Math.round(ch / 0.84)), sc = H / (ch / 0.84), W = Math.round(H * 2 / 3);
           const c1 = document.createElement("canvas"); c1.width = W; c1.height = H; const x1 = c1.getContext("2d");
           const dw = cw * sc, dh = ch * sc; x1.drawImage(c0, minX, minY, cw, ch, (W - dw) / 2, H - dh - H * 0.015, dw, dh);
-          // masks at low resolution: R = near blur, G = wide blur, B = tight blur (edges)
-          const mw = LOW ? 120 : 168, mh = Math.round(mw * 1.5), c2 = document.createElement("canvas"); c2.width = mw; c2.height = mh;
-          const x2 = c2.getContext("2d", {willReadFrequently: true}); x2.drawImage(c1, 0, 0, mw, mh);
-          const md = x2.getImageData(0, 0, mw, mh), A = new Float32Array(mw * mh);
-          for (let i = 0; i < A.length; i++) A[i] = md.data[i * 4 + 3] / 255;
-          const tiny = blur(A, mw, mh, Math.max(1, Math.round(mw * 0.012))), near = blur(A, mw, mh, Math.round(mw * 0.03)), wide = blur(A, mw, mh, Math.round(mw * 0.085));
-          for (let i = 0; i < A.length; i++){ md.data[i * 4] = Math.min(255, near[i] * 255); md.data[i * 4 + 1] = Math.min(255, wide[i] * 290); md.data[i * 4 + 2] = tiny[i] * 255; md.data[i * 4 + 3] = 255; }
-          x2.putImageData(md, 0, 0);
-          res({img: c1, mask: c2, aspect: W / H, tex: null});
+          res(finish(c1, W, H));
         } catch(err){ rej(err); }
       };
       im.onerror = () => { delete cache[hero]; rej(new Error("Character image missing: assets/hero/" + hero + ".webp")); };
       im.src = "assets/hero/" + hero + ".webp";
     });
+  }
+  function finish(c1, W, H){
+      // masks at low resolution: R = near blur, G = wide blur, B = tight blur (edges)
+      const mw = LOW ? 120 : 168, mh = Math.round(mw * 1.5), c2 = document.createElement("canvas"); c2.width = mw; c2.height = mh;
+      const x2 = c2.getContext("2d", {willReadFrequently: true}); x2.drawImage(c1, 0, 0, mw, mh);
+      const md = x2.getImageData(0, 0, mw, mh), A = new Float32Array(mw * mh);
+      for (let i = 0; i < A.length; i++) A[i] = md.data[i * 4 + 3] / 255;
+      const tiny = blur(A, mw, mh, Math.max(1, Math.round(mw * 0.012))), near = blur(A, mw, mh, Math.round(mw * 0.03)), wide = blur(A, mw, mh, Math.round(mw * 0.085));
+      for (let i = 0; i < A.length; i++){ md.data[i * 4] = Math.min(255, near[i] * 255); md.data[i * 4 + 1] = Math.min(255, wide[i] * 290); md.data[i * 4 + 2] = tiny[i] * 255; md.data[i * 4 + 3] = 255; }
+      x2.putImageData(md, 0, 0);
+      return {img: c1, mask: c2, aspect: W / H, tex: null};
   }
   function blur(src, w, h, r){ // three box blurs approximate a gaussian
     let a = Float32Array.from(src), b = new Float32Array(src.length);
@@ -212,6 +239,10 @@ const Hero2D = (() => {
     gl.activeTexture(gl.TEXTURE2); gl.bindTexture(gl.TEXTURE_2D, vtex);
     if (vReady){ gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true); gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false); try { gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, vid); } catch(err){} }
     gl.uniform1f(U.uVid, vReady ? 1 : 0); gl.uniform1f(U.uAsp, entry.aspect);
+    const cReady = cvOK && cvKey === st.hero && cvid.readyState >= 2;
+    gl.activeTexture(gl.TEXTURE3); gl.bindTexture(gl.TEXTURE_2D, ctex || vtex);
+    if (cReady){ gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true); gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false); try { gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, cvid); } catch(err){} }
+    gl.uniform1f(U.uCV, cReady ? 1 : 0);
     gl.uniform3fv(U.uCore, hex(st.pal.core)); gl.uniform3fv(U.uMain, hex(st.pal.main)); gl.uniform3fv(U.uDeep, hex(st.pal.deep));
     gl.clearColor(0, 0, 0, 0); gl.clear(gl.COLOR_BUFFER_BIT); gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
     if (!REDUCED && !st.still) raf = requestAnimationFrame(loop);
@@ -230,7 +261,7 @@ const Hero2D = (() => {
       const key = (opts.hero === "female" ? "female" : "male") + "_" + (OUTFITS.includes(opts.outfit) ? opts.outfit : "signature");
       if (cv.parentNode !== el) el.appendChild(cv);
       if (!ro){ ro = new ResizeObserver(() => kick()); } ro.disconnect(); ro.observe(el);
-      st.entry = await load(key); st.hero = key;
+      st.entry = await load(key); st.hero = key; charVideo(key);
       if (!el.isConnected) return false;
       lastDraw = 0; playVideo(); kick(); if (REDUCED || st.still) requestAnimationFrame(loop);
       return true;
