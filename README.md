@@ -60,7 +60,7 @@ Usernames are unique. Passwords are not checked for uniqueness on purpose: that 
 - Nothing is for sale. Badges, titles, ranks, name glow and aura are all earned. Theme and font are free settings.
 
 ### Replacing art
-- Characters: PNG or WebP, full body, front-facing, feet visible, transparent background (a plain single-colour background is keyed out automatically). The app crops to the character, so framing does not need to be exact. Current files were cut from the outfit reference sheet, about 560 px tall in the source, so they are a little soft; single full-resolution renders (1024 px or taller) will be sharper.
+- Characters: PNG or WebP, full body, front-facing, feet visible, transparent background (a plain single-colour background is keyed out automatically). The app crops to the character, so framing does not need to be exact. Current files are cut from single full-resolution renders (about 1500 to 1770 px tall) with rembg (isnet models), interiors filled solid and floor reflections trimmed at the sole line.
 - Aura: any white or grey energy loop on pure black, vertical. Re-run the loop and encode commands from the 3.1 commit message to rebuild both files.
 - Bump `VERSION` in `www/js/core.js` and `www/sw.js` after changing art.
 
@@ -138,7 +138,7 @@ After editing `www/js/scoring.js`, copy it to `supabase/functions/_shared/scorin
 
 - Server functions not yet deployed to the live Supabase project. Everything server-side was tested against real Postgres through a mock of Supabase's HTTP APIs and a fake Razorpay.
 - Not tested on a real Android phone.
-- Character art comes from a reference sheet at low resolution; full-resolution renders would be sharper.
+- The Huntress Signature render is shot from a low angle, so she changes size and angle when switching outfits; a straight-on version should replace it.
 - Account deletion is by request to the owner (the training reset in Settings is self-service).
 - No gym events, posters or member profile pages yet.
 
