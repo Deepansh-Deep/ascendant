@@ -7,6 +7,8 @@
 const RARITY = {common:{n:"Common", c:"var(--r-common)"}, rare:{n:"Rare", c:"var(--r-rare)"}, epic:{n:"Epic", c:"var(--r-epic)"}, legendary:{n:"Legendary", c:"var(--r-legend)"}};
 /* the two playable characters; art lives in assets/hero/<key>.png */
 const HEROES = [["male", "Hunter", "He"], ["female", "Huntress", "She"]];
+const OUTFIT_NAMES = [["signature", "Signature"], ["urban", "Urban"], ["royal", "Royal"]];
+const heroImg = (hero, outfit) => `assets/hero/${hero === "female" ? "female" : "male"}_${outfit || "signature"}.webp`;
 
 /* ---------------- aura: earned, never bought ----------------
    Power grows with level, rank, streak and bests beaten. Colour and style follow the rank. */

@@ -1,4 +1,4 @@
-# Ascendant 3.0
+# Ascendant 3.1
 
 A gym tracker built as a fitness RPG. You log real sets, earn XP, rank up, and your hunter's aura grows with your training. Your gym's guild ranks members fairly.
 
@@ -20,7 +20,8 @@ www/                      The app (PWA + Capacitor Android)
   js/hero2d.js            Hero stage: 2D character art with breathing and the outline-traced aura
   js/fx.js                Effects canvas for ceremonies (sparks, embers, shockwaves)
   js/config.js            Server URL + anon key + update URL (empty server = offline build)
-  assets/hero/            The two character images (male.png, female.png)
+  assets/hero/            Character art: 2 characters x 3 outfits (WebP, transparent)
+  assets/aura/            Aura video loop (WebM + MP4)
 site/                     Website (landing, download, contact, terms, privacy, refunds)
 pipeline/                 Old 3D character generator (not used by the app since 3.0)
 supabase/schema.sql       Database: tables, row level security, all functions
@@ -50,20 +51,18 @@ Usernames are unique. Passwords are not checked for uniqueness on purpose: that 
 - **Guild**: participant (join with code, pending state, live leaderboards, history, leave), Guild Master (leaderboard plus Manage), owner (Admin).
 - **Settings**: account (sync status, sync now, change password, sign out), profile, theme, font, split, exercises, reminders, backup, start fresh.
 
-## The hunter and the aura (3.0)
+## The hunter and the aura (3.1)
 
-- Two fixed characters, a hunter and a huntress (`www/assets/hero/male.png`, `female.png`). Picked at onboarding, switchable for free in the Hunter tab. No outfits, hair or body editing.
-- `www/js/hero2d.js` draws the art with WebGL: light breathing, a contact shadow, a rim light and an aura traced from the character's own outline that rises into flame tongues.
-- **Aura power** (0 to 100%) is earned: base 10, level up to 42, rank up to 14, streak up to 18, bests beaten up to 16 (`AURA_PARTS` in `ui.js`). Colour and style follow the rank, from Faint spirit (E) to Ascendant radiance (ASC). After a saved workout the aura is charged for the rest of the day and flares once.
+- Two characters, a hunter and a huntress, each with three outfits: Signature, Urban, Royal (`www/assets/hero/<male|female>_<outfit>.webp`). Picked at onboarding; hunter and outfit switch for free in the Hunter tab.
+- `www/js/hero2d.js` draws the art with WebGL: light breathing, a contact shadow, a rim light, and the aura.
+- **The aura is a video**, `www/assets/aura/aura.webm` (and `.mp4` for devices without WebM): white energy on black, a seamless 9 second loop made from the original. The stage tints it by rank and places its ground ripple under the feet.
+- **Aura power** (0 to 100%) is earned: base 10, level up to 42, rank up to 14, streak up to 18, bests beaten up to 16 (`AURA_PARTS` in `ui.js`). Power drives everything, from none to full: opacity, brightness, colour (faint white-grey first, full rank colour later), size and playback speed. At about 80% and above a magic circle forms behind the head. On days you train the aura is charged a little higher and flares once.
 - Nothing is for sale. Badges, titles, ranks, name glow and aura are all earned. Theme and font are free settings.
 
-### Replacing the character art
-Drop two PNGs into `www/assets/hero/` with the same names. Rules:
-- Full body, front-facing, standing, the whole figure visible including feet.
-- **Transparent background** is best. A plain single-colour background also works: it is keyed out automatically by the corner colour.
-- At least 1024 px tall, portrait. Framing does not need to be exact: the app crops to the character and places the feet at the bottom.
-- Then bump `VERSION` in `www/js/core.js` and `www/sw.js` so installed apps fetch the new art.
-The current images are placeholders rendered from the old 3D model.
+### Replacing art
+- Characters: PNG or WebP, full body, front-facing, feet visible, transparent background (a plain single-colour background is keyed out automatically). The app crops to the character, so framing does not need to be exact. Current files were cut from the outfit reference sheet, about 560 px tall in the source, so they are a little soft; single full-resolution renders (1024 px or taller) will be sharper.
+- Aura: any white or grey energy loop on pure black, vertical. Re-run the loop and encode commands from the 3.1 commit message to rebuild both files.
+- Bump `VERSION` in `www/js/core.js` and `www/sw.js` after changing art.
 
 ## XP
 
@@ -139,14 +138,14 @@ After editing `www/js/scoring.js`, copy it to `supabase/functions/_shared/scorin
 
 - Server functions not yet deployed to the live Supabase project. Everything server-side was tested against real Postgres through a mock of Supabase's HTTP APIs and a fake Razorpay.
 - Not tested on a real Android phone.
-- Character art is a placeholder until the final PNGs are added.
+- Character art comes from a reference sheet at low resolution; full-resolution renders would be sharper.
 - Account deletion is by request to the owner (the training reset in Settings is self-service).
 - No gym events, posters or member profile pages yet.
 
 ## Licenses
 
 - Sora, Inter, Barlow Condensed and the 11 optional typefaces: SIL Open Font License.
-- Placeholder character art: rendered from CC0 MakeHuman and MPFB2 assets (pipeline in `pipeline/`, no longer used by the app).
+- Character art and aura video: generated by the owner with ChatGPT and Gemini for this app.
 
 ## Owner tools (2.1.1)
 

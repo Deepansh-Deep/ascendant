@@ -1,6 +1,6 @@
 "use strict";
 /* ===== CONSTANTS ===== */
-const VERSION = "3.0.0";
+const VERSION = "3.1.0";
 const MUSCLES = ["Chest","Back","Shoulders","Biceps","Triceps","Legs","Abs","Cardio"];
 const OPTIONS = {
   Chest:["Bench Press","Incline Dumbbell Press","Chest Press Machine","Pec Deck Fly","Cable Crossover","Push-ups"],
@@ -52,6 +52,7 @@ function migrate(s){
   if (!s.settings.remind) s.settings.remind = {on:false, time:"18:30"};
   if (!("seenReport" in s)) s.seenReport = null;
   s.hero = s.hero === "female" || s.hero === "male" ? s.hero : (s.look && s.look.gender === "female") || (s.char && s.char.body === "f") ? "female" : "male";
+  if (!["signature", "urban", "royal"].includes(s.outfit)) s.outfit = "signature";
   delete s.look; delete s.owned; delete s.wallet; delete s.ownedV2; delete s.seenEvo;
   s.achieved = s.achieved || {}; s.guild = s.guild || null;
   s.style = s.style || "gym"; s.path = s.path || "solo"; s.pass = !!s.pass;

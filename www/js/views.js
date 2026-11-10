@@ -33,7 +33,7 @@ async function mountStage(){
   const fail = msg => { el.innerHTML = `<div class="stage-fallback">${hexBadge(S && !UI.onb ? compute().rank[1] : "E", 76)}<p>${msg}</p></div>`; };
   if (!Hero2D.supported) return fail("This phone cannot draw the hunter. Training, XP and rankings work normally.");
   const opts = JSON.parse(el.dataset.stage || "{}");
-  const o = {hero: opts.hero || heroOf(), rank: "E", power: .25, charged: false, still: !!opts.still};
+  const o = {hero: opts.hero || heroOf(), outfit: UI.onb ? "signature" : (S && S.outfit) || "signature", rank: "E", power: .25, charged: false, still: !!opts.still};
   if (S && !UI.onb && !UI.auth){ const C = compute(); o.rank = C.rank[1]; o.power = C.aura; o.charged = trainedToday() && UI.tab === "home"; }
   try {
     await Hero2D.mount(el, o);
@@ -258,8 +258,9 @@ function panelAura(C){
     <div class="line"><span>Base</span><span class="num"><b>${Math.round(AURA_BASE * 100)}</b> <span class="tiny mute">/ ${Math.round(AURA_BASE * 100)}</span></span></div></section>
   <section class="card">${secH("Aura by rank", nr ? `<span class="tiny mute">${nr[2]} at level ${nr[0]}</span>` : "")}
     <div class="aura-ranks">${RANKS.map(r => `<div class="ar ${C.level >= r[0] ? "got" : ""} ${C.rank[0] === r[0] ? "cur" : ""}" style="--ac:${Hero2D.PALETTES[r[1]].main}"><i></i><b>${r[1]}</b><span>${AURA_NAME[r[1]]}</span></div>`).join("")}</div></section>
-  <section class="card"><div class="row between gap"><div class="grow"><h3>Your hunter</h3><div class="tiny mute">Free to switch any time.</div></div>
+  <section class="card"><div class="row between gap"><div class="grow"><h3>Your hunter</h3><div class="tiny mute">Hunter and outfit are free to switch any time.</div></div>
     <div class="seg mini">${HEROES.map(([k, n]) => `<button class="${(S.hero || "male") === k ? "on" : ""}" data-act="set-hero" data-v="${k}">${n}</button>`).join("")}</div></div>
+    <div class="sub-h">Outfit</div><div class="outfits">${OUTFIT_NAMES.map(([k, n]) => `<button class="of ${(S.outfit || "signature") === k ? "on" : ""}" data-act="set-outfit" data-v="${k}" aria-pressed="${(S.outfit || "signature") === k}"><img src="${heroImg(S.hero, k)}" alt="" loading="lazy"><span>${n}</span></button>`).join("")}</div>
     <div class="opt"><label class="opt-l" for="hn">Hunter name</label><input id="hn" class="input" maxlength="18" data-hn value="${esc(S.hunterName || "")}" placeholder="${esc(S.profile.name)}"></div></section>`;
 }
 function panelMuscles(C){
@@ -384,7 +385,7 @@ function renderOnboarding(){
       ${used.map(m => `<section class="card"><h3>${m}</h3><div class="chips">${optsFor(m, o.style).map(e => `<button class="chip ${o.ex[m].includes(e) ? "on" : ""}" data-act="onb-ex" data-m="${m}" data-e="${esc(e)}">${esc(e)}</button>`).join("")}</div></section>`).join("")}</div>
       <button class="btn" data-act="onb-next">Next</button>`; }
   if (o.step === 5) body = `<div class="grow"><h1>Choose your hunter</h1><p class="mute sm">Your aura grows as you train. You can switch hunter later.</p>
-      <div class="hero-pick">${HEROES.map(([k, n]) => `<button class="hp ${o.hero === k ? "on" : ""}" data-act="onb-hero" data-v="${k}" aria-pressed="${o.hero === k}"><img src="assets/hero/${k}.png" alt="${n}"><b>${n}</b></button>`).join("")}</div>
+      <div class="hero-pick">${HEROES.map(([k, n]) => `<button class="hp ${o.hero === k ? "on" : ""}" data-act="onb-hero" data-v="${k}" aria-pressed="${o.hero === k}"><img src="${heroImg(k, "signature")}" alt="${n}"><b>${n}</b></button>`).join("")}</div>
       <div class="opt"><label class="opt-l" for="hn">Hunter name</label><input id="hn" class="input" maxlength="18" data-hn value="${esc(o.hunterName)}" placeholder="${esc(o.name || "Your hunter")}"></div></div>
       <button class="btn" data-act="onb-next">Start my journey</button>`;
   $("#app").innerHTML = `<div class="onb">${o.step ? `<div class="steps" aria-label="Step ${o.step} of ${N}">${Array.from({length:N}, (_, i) => `<i class="${o.step >= i + 1 ? "on" : ""}"></i>`).join("")}</div>` : ""}${body}</div>`;
@@ -467,7 +468,7 @@ async function makeCard(kind){
   x.textAlign = "center"; x.fillStyle = v("--acc"); x.font = `600 30px ${DF}`; x.fillText("Ascendant", W / 2, 96);
   let g, lw, wk;
   if (kind === "week"){ wk = addDays(mondayOf(todayD()), -7); lw = weekStats(C, wk); g = gradeOf(lw); }
-  const art = kind !== "week" ? await Hero2D.art(S.hero).catch(() => null) : null;
+  const art = kind !== "week" ? await Hero2D.art(S.hero, S.outfit).catch(() => null) : null;
   if (art){ const ac = Hero2D.PALETTES[C.rank[1]].main, gl = x.createRadialGradient(W / 2, 640, 40, W / 2, 640, 520); gl.addColorStop(0, ac + "66"); gl.addColorStop(1, ac + "00"); x.fillStyle = gl; x.fillRect(0, 120, W, 900);
     x.drawImage(art, W / 2 - 300, 130, 600, 900); }
   if (!art){ x.fillStyle = v("--ink"); x.font = `700 ${kind === "week" ? 360 : 300}px ${NF}`; x.fillText(kind === "week" ? g : C.rank[1], W / 2, 640); }
@@ -543,6 +544,7 @@ document.addEventListener("click", async e => {
     case "htab": UI.tab = "hunter"; UI.htab = v; render(); return;
     case "open-badges": UI.tab = "hunter"; UI.htab = "badges"; render(); scrollTo(0, 0); return;
     case "set-hero": S.hero = v; save(); render(); return;
+    case "set-outfit": S.outfit = v; save(); render(); return;
     case "set-theme": S.theme = v; save(); render(); return;
     case "onb-hero": UI.onb.hero = v; renderOnboarding(); return;
     case "go-today": { if (UI.editKey) return toast("Save or discard your log edit first"); goDay(TODAY()); render(); scrollTo(0, 0);

@@ -543,3 +543,8 @@ textarea.input{min-height:110px;padding:12px;font-size:12px}
 .glow[data-rank=SS]{--g1:#FFFFFF;--g2:#FFD98A;--gs:2.2s;--gp:rgba(255,226,150,.9);animation:glow-sheen 2.2s ease-in-out infinite,glow-pulse 1.7s ease-in-out infinite}
 .glow[data-rank=SSS]{--g1:#E9DAFF;--g2:#8E4DFF;--gs:2s;--gp:rgba(142,77,255,.95);animation:glow-sheen 2s ease-in-out infinite,glow-pulse 1.5s ease-in-out infinite}
 .glow[data-rank=ASC]{--g1:#FFFFFF;--g2:#9FDCFF;--gs:1.8s;--gp:rgba(190,232,255,1);animation:glow-sheen 1.8s ease-in-out infinite,glow-pulse 1.3s ease-in-out infinite}
+.outfits{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.of{display:flex;flex-direction:column;align-items:center;gap:4px;padding:8px 6px 10px;border-radius:14px;border:1px solid var(--line);background:radial-gradient(70% 50% at 50% 55%,var(--surface2),var(--surface))}
+.of img{width:100%;aspect-ratio:1/2;object-fit:contain}
+.of span{font-size:12.5px;font-weight:600}
+.of.on{border-color:var(--acc);box-shadow:0 0 0 1px var(--acc) inset,0 0 20px var(--acc-soft)}

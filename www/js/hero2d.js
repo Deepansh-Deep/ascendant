@@ -1,5 +1,6 @@
-/* Ascendant hero stage: one 2D character image (assets/hero/male.png or female.png) brought to life with WebGL.
-   - The aura is traced from the character's own outline, so it hugs the body and rises into flame tongues.
+/* Ascendant hero stage: 2D character art (assets/hero/<male|female>_<outfit>.webp) brought to life with WebGL.
+   - The aura is a looping video of white energy on black (assets/aura/aura.mp4), tinted by rank and scaled by power:
+     opacity, brightness, colour, size and speed all rise from none to full. At the top a magic circle forms behind the head.
    - Aura strength comes from progress (level, rank, streak, bests). Colour and style follow the rank.
    - After a workout the hero is "charged" for the day; burst() flares it once.
    Art can be any PNG: transparent background preferred, a flat single-colour background is keyed out automatically.
@@ -13,82 +14,71 @@ const Hero2D = (() => {
     D: {core: "#F0FFF6", main: "#3EDB86", deep: "#0C6B45", style: 0},
     C: {core: "#EAF4FF", main: "#3F8CFF", deep: "#1A2C9A", style: 0},
     B: {core: "#F5ECFF", main: "#A970FF", deep: "#3B1B8E", style: 1},
-    A: {core: "#FFFCE8", main: "#FFD24A", deep: "#E0780F", style: 0},
+    A: {core: "#FFF6DC", main: "#FFB43C", deep: "#B4470A", style: 0},
     S: {core: "#FFE6D9", main: "#FF3B2E", deep: "#5E0610", style: 1},
     SS: {core: "#FFFFFF", main: "#FFE9A8", deep: "#C9862A", style: 0},
     SSS: {core: "#F3E8FF", main: "#8E4DFF", deep: "#0B0614", style: 1},
     ASC: {core: "#FFFFFF", main: "#BFE8FF", deep: "#3A5BFF", style: 2}
   };
+  const OUTFITS = ["signature", "urban", "royal"];
   const hex = h => { const n = parseInt(h.slice(1), 16); return [(n >> 16 & 255) / 255, (n >> 8 & 255) / 255, (n & 255) / 255]; };
 
   const VS = `attribute vec2 aP; varying vec2 vF; void main(){ vF = aP * 0.5 + 0.5; gl_Position = vec4(aP, 0.0, 1.0); }`;
   const FS = `precision highp float;
     varying vec2 vF;
-    uniform sampler2D tImg, tMask; uniform vec2 uRes; uniform vec4 uRect; uniform float uT, uPow, uCharge, uBurst, uStyle, uBreath;
+    uniform sampler2D tImg, tMask, tVid; uniform vec2 uRes; uniform vec4 uRect; uniform float uT, uPow, uCharge, uBurst, uBreath, uVid, uAsp;
     uniform vec3 uCore, uMain, uDeep;
-    float h21(vec2 p){ p = fract(p * vec2(123.34, 456.21)); p += dot(p, p + 45.32); return fract(p.x * p.y); }
-    float vn(vec2 p){ vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
-      return mix(mix(h21(i), h21(i + vec2(1.0, 0.0)), f.x), mix(h21(i + vec2(0.0, 1.0)), h21(i + vec2(1.0, 1.0)), f.x), f.y); }
-    float fbm(vec2 p){ float v = 0.0, a = 0.5; for (int i = 0; i < 4; i++){ v += a * vn(p); p = p * 2.07 + vec2(3.1, 1.7); a *= 0.5; } return v; }
     vec4 M(vec2 p){ if (p.x < 0.0 || p.x > 1.0 || p.y < 0.0 || p.y > 1.0) return vec4(0.0); return texture2D(tMask, p); }
     vec4 I(vec2 p){ if (p.x < 0.0 || p.x > 1.0 || p.y < 0.0 || p.y > 1.0) return vec4(0.0); return texture2D(tImg, p); }
+    float ring(float d, float r, float w){ return smoothstep(w, 0.0, abs(d - r)); }
     void main(){
       vec2 px = vF * uRes;
-      vec2 p = (px - uRect.xy) / uRect.zw;                       // 0..1 inside the character image, y up
-      float br = uBreath * smoothstep(0.25, 0.75, p.y);           // breathing lifts the upper body only
+      vec2 p = (px - uRect.xy) / uRect.zw;                        // 0..1 inside the character image, y up
+      float br = uBreath * smoothstep(0.25, 0.75, p.y);
       vec2 pi = vec2(0.5 + (p.x - 0.5) / (1.0 + br * 0.35), p.y / (1.0 + br));
-      vec2 q = vec2(p.x * uRect.z / uRect.w, p.y);                // isotropic coordinates for noise
-      float t = uT, charge = uCharge, pw = uPow;
-      vec4 c = I(pi);
-      vec4 m0 = M(pi);
-
-      // ---- aura
-      float n  = fbm(q * vec2(5.0, 2.6) - vec2(0.0, t * 1.1));
-      float n2 = fbm(q * vec2(13.0, 5.5) - vec2(t * 0.2, t * 2.3));
-      float streak = fbm(q * vec2(30.0, 3.0) - vec2(0.0, t * 3.2));
-      float reach = 0.45 + 0.8 * pw + 0.5 * charge + 0.9 * uBurst;
-      float lift = (0.010 + n * 0.06 + n2 * 0.055 + streak * 0.022) * reach;
-      vec2 off = vec2((n - 0.5) * 0.05 + (n2 - 0.5) * 0.025, -lift);
-      float w = M(pi + off).g;
+      vec4 c = I(pi); vec4 m0 = M(pi);
+      // e: 0 = no aura, 1 = full aura. Earned power, lifted on training days, flared by a burst.
+      float e = clamp(uPow + 0.18 * uCharge, 0.0, 1.0) + 0.55 * uBurst;
+      float vis = smoothstep(0.1, 0.45, e);                        // opacity
+      float gain = 0.3 + 1.0 * min(e, 1.3);                        // intensity
+      float sat = smoothstep(0.12, 0.7, e);                        // colour: faint white-grey first, full colour later
+      vec3 au = vec3(0.0);
+      // ---- the aura video: white energy on black, tinted, placed with its ground ripple under the feet
+      if (uVid > 0.5 && vis > 0.0){
+        float H = 0.92 + 0.28 * min(e, 1.2);                       // grows taller with power
+        vec2 vu = vec2(0.5 + (p.x - 0.5) * uAsp / (H * 0.5639), 0.122 + (p.y - 0.012) / H);
+        if (vu.x > 0.0 && vu.x < 1.0 && vu.y > 0.0 && vu.y < 1.0){
+          float L = max(0.0, (texture2D(tVid, vu).g - 0.035) / 0.965);
+          float edge = smoothstep(0.0, 0.08, vu.x) * smoothstep(1.0, 0.92, vu.x) * smoothstep(1.0, 0.9, vu.y);
+          vec3 tint = mix(uDeep, uMain, smoothstep(0.04, 0.42, L));
+          tint = mix(tint, uCore, smoothstep(0.55, 0.95, L));
+          vec3 col = mix(vec3(L) * vec3(0.86, 0.9, 1.0), tint * (0.55 + 0.6 * L), sat);
+          au += col * L * gain * vis * edge;
+        }
+      }
+      // ---- soft halo hugging the body and the inner rim, so aura and character read as one
       float w0 = m0.r;
-      float f = w * (0.4 + 1.15 * n2) * (0.55 + 0.6 * pw + 0.35 * charge + 0.6 * uBurst);
-      float flick = 0.9 + 0.1 * sin(t * 13.0 + n * 11.0);
-      float outer = smoothstep(0.13, 0.16, f * flick) * (0.55 + 0.45 * smoothstep(0.35, 0.7, streak + n2 * 0.4));
-      float mid   = smoothstep(0.33, 0.36, f * (0.75 + 0.5 * streak)) * (1.0 - smoothstep(0.7, 0.95, w0) * 0.8);
-      float hot   = smoothstep(0.52, 0.56, f * (0.7 + 0.6 * streak));
-      float core  = smoothstep(0.28, 0.36, w0) * (1.0 - smoothstep(0.62, 0.9, w0)) * (0.6 + 0.4 * n2);
-      float k = clamp(0.35 + 0.6 * pw + 0.35 * charge, 0.0, 1.15) + uBurst * 0.8;
-      vec3 au = uDeep * outer * (0.38 + 0.3 * streak) + uMain * mid * (0.5 + 0.6 * streak)
-              + mix(uMain, uCore, 0.6) * hot * 0.5 + mix(uMain, uCore, 0.8) * core * 0.5;
-      au += uMain * (smoothstep(0.0, 0.5, w0) * 0.5 + smoothstep(0.0, 0.7, M(pi).g) * 0.35) * 0.14;   // soft light on the background
-      float smokeA = 0.0;
-      if (uStyle > 0.5 && uStyle < 1.5){                          // shadow style: dark smoke around the light
-        float s = fbm(q * vec2(4.0, 2.4) - vec2(t * 0.1, t * 0.5) + n2 * 0.4);
-        float wide = M(pi + vec2(0.0, -0.05 - s * 0.05)).g;
-        float smoke = smoothstep(0.04, 0.1, wide * (0.5 + s)) * (1.0 - mid) * smoothstep(0.45, 0.66, s);
-        smokeA = smoke * 0.55 * min(k, 1.0); au *= 1.0 - smoke * 0.5;
+      au += uMain * smoothstep(0.0, 0.6, M(pi).g) * (1.0 - smoothstep(0.55, 0.9, w0)) * 0.22 * e * (0.4 + 0.6 * sat);
+      float rim = c.a * smoothstep(0.97, 0.72, m0.b) * (0.05 + 0.32 * e + 0.6 * uBurst);
+      vec3 body = c.rgb + mix(vec3(1.0), mix(uMain, uCore, 0.5), sat) * rim * c.a;
+      // ---- magic circle behind the head at the top of the scale
+      float circ = smoothstep(0.8, 0.98, e);
+      if (circ > 0.0){
+        vec2 q = vec2((p.x - 0.5) * uAsp, p.y - 0.8);
+        float d = length(q), ang = atan(q.y, q.x), R = 0.19, t = uT;
+        float m = ring(d, R, 0.004) + ring(d, R * 0.92, 0.0025) * 0.8 + ring(d, R * 0.62, 0.003) * 0.7 + ring(d, R * 1.18, 0.0018) * 0.4;
+        float ticks = step(0.55, fract(ang * 36.0 / 6.2832 + t * 0.06)) * smoothstep(0.004, 0.0, abs(d - R * 0.96) - 0.009);
+        float star = smoothstep(0.006, 0.0, abs(sin(4.0 * (ang - t * 0.12))) * d) * step(d, R * 0.92) * step(R * 0.2, d);
+        float beams = (smoothstep(0.0035, 0.0, abs(q.y)) + smoothstep(0.0035, 0.0, abs(q.x))) * smoothstep(R * 2.4, R * 0.4, d);
+        au += mix(uMain, uCore, 0.5) * (m + ticks * 0.7 + star * 0.6 + beams * 0.5) * circ * 1.1;
+        au += uMain * smoothstep(R * 1.3, 0.0, d) * 0.12 * circ;
       }
-      if (uStyle > 1.5){                                           // spirit style: small sparks rising near the body
-        vec2 g = vec2(q.x * 46.0, q.y * 46.0 - t * 3.0); vec2 id = floor(g); vec2 fr = fract(g) - 0.5;
-        float rnd = h21(id), on = step(0.94, rnd) * smoothstep(0.03, 0.15, M(pi).g) * (1.0 - smoothstep(0.55, 0.9, w0));
-        au += mix(uMain, uCore, 0.7) * on * (0.5 + 0.5 * sin(t * 7.0 + rnd * 40.0)) * smoothstep(0.16, 0.02, length(fr)) * 1.4;
-      }
-      au *= k;
-
-      // ---- ground: contact shadow plus a pool of aura light under the feet
+      // ---- ground: contact shadow plus a pool of light under the feet
       vec2 gp = vec2((p.x - 0.5) * 1.9, (p.y - 0.012) * 9.0);
       float pool = exp(-dot(gp, gp) * 1.6);
-      float shadow = pool * 0.55;
-      au += uMain * pool * (0.05 + 0.2 * pw + 0.25 * charge + 0.6 * uBurst);
-
-      // ---- rim light inside the body edge, coloured by the aura
-      float rim = c.a * smoothstep(0.97, 0.72, m0.b) * (0.12 + 0.3 * pw + 0.4 * charge + 0.7 * uBurst) * (0.6 + 0.6 * n2);
-      vec3 body = c.rgb + mix(uMain, uCore, 0.5) * rim * c.a;
-      // a few tongues pass in front of the body edge
-      float tongue = smoothstep(0.6, 0.66, n2 * M(pi + vec2(0.0, -0.03 - n2 * 0.04)).g * 1.4) * (1.0 - smoothstep(0.9, 0.99, m0.b)) * (0.3 * pw + 0.45 * charge + uBurst) * 0.5;
-      body += mix(uMain, uCore, 0.6) * tongue;
-
-      float auA = clamp(max(max(au.r, au.g), au.b) * 0.92 + smokeA + shadow * (1.0 - c.a), 0.0, 1.0);
+      au += mix(vec3(0.8), uMain, sat) * pool * (0.02 + 0.28 * e);
+      float shadow = pool * 0.5;
+      float auA = clamp(max(max(au.r, au.g), au.b) * 0.92 + shadow * (1.0 - c.a), 0.0, 1.0);
       vec3 rgb = body + au * (1.0 - c.a);
       float a = c.a + auA * (1.0 - c.a);
       gl_FragColor = vec4(min(rgb, vec3(a)), a);
@@ -110,12 +100,29 @@ const Hero2D = (() => {
     gl.useProgram(prog);
     const buf = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, buf); gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]), gl.STATIC_DRAW);
     const loc = gl.getAttribLocation(prog, "aP"); gl.enableVertexAttribArray(loc); gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0);
-    ["tImg", "tMask", "uRes", "uRect", "uT", "uPow", "uCharge", "uBurst", "uStyle", "uBreath", "uCore", "uMain", "uDeep"].forEach(n => U[n] = gl.getUniformLocation(prog, n));
-    gl.uniform1i(U.tImg, 0); gl.uniform1i(U.tMask, 1);
+    ["tImg", "tMask", "tVid", "uRes", "uRect", "uT", "uPow", "uCharge", "uBurst", "uBreath", "uVid", "uAsp", "uCore", "uMain", "uDeep"].forEach(n => U[n] = gl.getUniformLocation(prog, n));
+    gl.uniform1i(U.tImg, 0); gl.uniform1i(U.tMask, 1); gl.uniform1i(U.tVid, 2);
+    initVideo();
     cv.addEventListener("webglcontextlost", e => { e.preventDefault(); Object.keys(cache).forEach(k => delete cache[k]); gl = null; });
     document.addEventListener("visibilitychange", () => { if (!document.hidden) kick(); });
     return true;
   }
+
+  /* the aura video (assets/aura/aura.webm, or .mp4 where WebM is unsupported): white energy on black, seamless 9 s loop */
+  let vid = null, vtex = null, vidOK = false;
+  function initVideo(){
+    vid = document.createElement("video"); vid.muted = true; vid.loop = true; vid.playsInline = true; vid.preload = "auto"; vid.crossOrigin = "anonymous";
+    vid.setAttribute("muted", ""); vid.setAttribute("playsinline", "");
+    vid.src = vid.canPlayType('video/webm; codecs="vp9"') ? "assets/aura/aura.webm" : "assets/aura/aura.mp4";
+    vid.addEventListener("loadeddata", () => { vidOK = true; if (REDUCED) vid.currentTime = 3; kick(); });
+    vtex = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D, vtex);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array([0, 0, 0, 255]));
+  }
+  function playVideo(){ if (!vid || REDUCED || st.still) return; vid.playbackRate = Math.min(1.3, 0.75 + 0.45 * Math.min(1, st.power + 0.2 * st.chargeT)); const pr = vid.play(); if (pr && pr.catch) pr.catch(() => {}); }
+  function pauseVideo(){ if (vid && !vid.paused) vid.pause(); }
+  document.addEventListener("visibilitychange", () => { if (document.hidden) pauseVideo(); });
 
   /* load, key out a flat background if needed, crop to the character, pad to 2:3 with the feet near the bottom, build blurred outline masks */
   function load(hero){
@@ -153,8 +160,8 @@ const Hero2D = (() => {
           res({img: c1, mask: c2, aspect: W / H, tex: null});
         } catch(err){ rej(err); }
       };
-      im.onerror = () => rej(new Error("Character image missing: assets/hero/" + hero + ".png"));
-      im.src = "assets/hero/" + hero + ".png";
+      im.onerror = () => { delete cache[hero]; rej(new Error("Character image missing: assets/hero/" + hero + ".webp")); };
+      im.src = "assets/hero/" + hero + ".webp";
     });
   }
   function blur(src, w, h, r){ // three box blurs approximate a gaussian
@@ -186,7 +193,7 @@ const Hero2D = (() => {
   function kick(){ if (!raf && el) raf = requestAnimationFrame(loop); }
   function loop(now){
     raf = 0;
-    if (!el || !el.isConnected || document.hidden || !gl) return;
+    if (!el || !el.isConnected || document.hidden || !gl){ pauseVideo(); return; }
     const entry = st.entry; if (!entry){ return; }
     if (LOW && now - lastDraw < 30 && !st.still){ raf = requestAnimationFrame(loop); return; }
     const dt = Math.min(0.05, (now - (lastDraw || now)) / 1000); lastDraw = now;
@@ -201,13 +208,17 @@ const Hero2D = (() => {
     gl.uniform2f(U.uRes, w, h); gl.uniform4f(U.uRect, rx, ry, rw, rh); gl.uniform1f(U.uT, t);
     gl.uniform1f(U.uPow, st.power); gl.uniform1f(U.uCharge, REDUCED ? Math.min(st.charge, 0.6) : st.charge); gl.uniform1f(U.uBurst, e);
     gl.uniform1f(U.uBreath, REDUCED || st.still ? 0 : 0.006 * Math.sin(t * 1.35));
-    gl.uniform1f(U.uStyle, st.pal.style); gl.uniform3fv(U.uCore, hex(st.pal.core)); gl.uniform3fv(U.uMain, hex(st.pal.main)); gl.uniform3fv(U.uDeep, hex(st.pal.deep));
+    const vReady = vidOK && vid.readyState >= 2;
+    gl.activeTexture(gl.TEXTURE2); gl.bindTexture(gl.TEXTURE_2D, vtex);
+    if (vReady){ gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true); gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false); try { gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, vid); } catch(err){} }
+    gl.uniform1f(U.uVid, vReady ? 1 : 0); gl.uniform1f(U.uAsp, entry.aspect);
+    gl.uniform3fv(U.uCore, hex(st.pal.core)); gl.uniform3fv(U.uMain, hex(st.pal.main)); gl.uniform3fv(U.uDeep, hex(st.pal.deep));
     gl.clearColor(0, 0, 0, 0); gl.clear(gl.COLOR_BUFFER_BIT); gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
     if (!REDUCED && !st.still) raf = requestAnimationFrame(loop);
   }
 
   return {
-    PALETTES,
+    PALETTES, OUTFITS,
     get supported(){ return supported && !!(window.WebGLRenderingContext); },
     /* opts: hero 'male'|'female', rank letter, power 0..1, charged bool, still bool (no animation) */
     async mount(target, opts = {}){
@@ -216,18 +227,18 @@ const Hero2D = (() => {
       if (opts.rank && PALETTES[opts.rank]) st.pal = PALETTES[opts.rank];
       if (typeof opts.power === "number") st.power = Math.max(0, Math.min(1, opts.power));
       st.chargeT = opts.charged ? 1 : 0; if (opts.instant) st.charge = st.chargeT;
-      const hero = opts.hero === "female" ? "female" : "male";
+      const key = (opts.hero === "female" ? "female" : "male") + "_" + (OUTFITS.includes(opts.outfit) ? opts.outfit : "signature");
       if (cv.parentNode !== el) el.appendChild(cv);
       if (!ro){ ro = new ResizeObserver(() => kick()); } ro.disconnect(); ro.observe(el);
-      st.entry = await load(hero); st.hero = hero;
+      st.entry = await load(key); st.hero = key;
       if (!el.isConnected) return false;
-      lastDraw = 0; kick(); if (REDUCED || st.still) requestAnimationFrame(loop);
+      lastDraw = 0; playVideo(); kick(); if (REDUCED || st.still) requestAnimationFrame(loop);
       return true;
     },
-    setCharged(on){ st.chargeT = on ? 1 : 0; kick(); },
+    setCharged(on){ st.chargeT = on ? 1 : 0; playVideo(); kick(); },
     burst(){ if (REDUCED) return; st.burst = 1; kick(); },
     /* the character art as a canvas (for share cards) */
-    async art(hero){ return (await load(hero === "female" ? "female" : "male")).img; },
+    async art(hero, outfit){ return (await load((hero === "female" ? "female" : "male") + "_" + (OUTFITS.includes(outfit) ? outfit : "signature"))).img; },
     state: st
   };
 })();
