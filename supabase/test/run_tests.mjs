@@ -163,6 +163,30 @@ ok((await rpc("request_join", { p_join_code: JOIN }, p1T)).ok && (await rpc("lea
 const direct = await call("POST", "/rest/v1/rpc/_master_guild", {}, p1T); ok(!direct.ok, "internal helper functions are not callable", direct.data);
 const adm = await rpc("admin_mark_paid", { p_order_id: ord.data.order_id, p_payment_id: "x" }, p1T); ok(!adm.ok, "app users cannot call admin functions", adm.data);
 
+// ---------- 9b. owner tools: crystals, deletes, audit log
+console.log("owner tools");
+ok(!(await rpc("owner_grant_crystals", { p_user: r1.user_id, p_amount: 10, p_reason: "x" }, p2T)).ok, "participant cannot grant crystals");
+ok(!(await rpc("owner_delete_user", { p_user: r1.user_id }, gmT)).ok, "guild master cannot delete users");
+ok(!(await rpc("owner_delete_guild", { p_guild: yg.id }, p2T)).ok, "participant cannot delete guilds");
+ok((await rpc("my_account", {}, ownerT)).data.wallet.pass === true && (await rpc("my_account", {}, p2T)).data.wallet.pass === false, "owner has the Pass, participants do not");
+const g1 = await rpc("owner_grant_crystals", { p_user: r2.user_id, p_amount: 50, p_reason: "giveaway" }, ownerT);
+ok(g1.ok && g1.data.balance === 50 && (await rpc("my_account", {}, p2T)).data.wallet.bought === 50, "owner grants 50 crystals", g1.data);
+const g2 = await rpc("owner_grant_crystals", { p_user: r2.user_id, p_amount: -500, p_reason: "test" }, ownerT);
+ok(g2.ok && g2.data.balance === 0, "removing more than he has clamps at 0", g2.data);
+ok(!(await rpc("owner_grant_crystals", { p_user: r2.user_id, p_amount: 0, p_reason: "" }, ownerT)).ok && !(await rpc("owner_grant_crystals", { p_user: r2.user_id, p_amount: 6000, p_reason: "" }, ownerT)).ok, "zero and absurd amounts rejected");
+const olog = await rpc("owner_log_recent", {}, ownerT);
+ok(olog.ok && olog.data.some(l => l.action === "grant_crystals" && l.target_name === P2 && l.detail.reason === "giveaway"), "grants appear in the audit log", olog.data);
+ok(!(await rpc("owner_delete_user", { p_user: so.data.user.id }, ownerT)).ok, "owner cannot delete his own account");
+const gm_id = sg.data.user.id;
+ok(!(await rpc("owner_delete_user", { p_user: gm_id }, ownerT)).ok, "cannot delete a user who still runs a guild");
+ok((await rpc("owner_delete_user", { p_user: r1.user_id }, ownerT)).ok, "owner deletes Rahul");
+ok(!(await login(P1, "newpass123")).ok && sql(`select count(*) from public.profiles where id = '${r1.user_id}'`) === "0", "his account and profile are gone");
+ok(sql(`select count(*) from public.purchases where razorpay_order_id = '${ord.data.order_id}' and user_id is null`) === "1", "his payment record is kept, without a name");
+ok(sql(`select count(*) from public.user_logs where user_id = '${r1.user_id}'`) === "0", "his training data is gone");
+ok((await rpc("owner_delete_guild", { p_guild: yg.id }, ownerT)).ok, "owner deletes the guild");
+ok(sql(`select role from public.profiles where id = '${gm_id}'`) === "participant" && sql(`select count(*) from public.guilds where id = '${yg.id}'`) === "0", "guild is gone, its master is a participant again");
+ok((await rpc("owner_delete_user", { p_user: gm_id }, ownerT)).ok, "now the former master can be deleted");
+
 // ---------- 10. account self-service
 console.log("self-service");
 const pw = await call("PUT", "/auth/v1/user", { password: "changed123" }, p2T); ok(pw.ok && (await login(P2, "changed123")).ok, "user changes own password");

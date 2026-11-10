@@ -181,14 +181,16 @@ function viewAdmin(C){
         <div class="grid2"><div><label class="lab" for="cc-valid">Code valid for (days)</label><input id="cc-valid" class="input" inputmode="numeric" value="30"></div>
         <div><label class="lab" for="cc-note">Note</label><input id="cc-note" class="input" maxlength="80" placeholder="Yodha Gym, paid Nov"></div></div>
         <button class="btn" data-act="ac-mkcodes">Create codes</button>
-        ${A.newCodes ? `<div class="newcodes">${A.newCodes.map(c => `<div class="line"><b class="num code">${esc(c)}</b><button class="btn sm ghost" data-act="ac-copy" data-v="${esc(c)}">Copy</button></div>`).join("")}</div>` : ""}</section>`; }
+        ${A.newCodes ? `<div class="newcodes">${A.newCodes.map(c => `<div class="line"><b class="num code">${esc(c)}</b><button class="btn sm ghost" data-act="ac-copy" data-v="${esc(c)}">Copy</button></div>`).join("")}</div>` : ""}</section>
+      <section class="card"><h3>Recent owner actions</h3>${!A.log ? `<p class="mute sm"><span class="spin sm"></span> Loading…</p>` : A.log.length ? A.log.map(l => `<div class="line"><div><b>${l.action === "grant_crystals" ? `${l.detail.amount > 0 ? "+" : ""}${l.detail.amount} crystals to @${esc(l.target_name)}` : l.action === "delete_user" ? `Deleted @${esc(l.target_name)}` : `Deleted guild ${esc(l.target_name)}`}</b>
+        ${l.detail && l.detail.reason ? `<div class="tiny mute">${esc(l.detail.reason)}</div>` : ""}</div><span class="tiny mute">${fmtDate(l.created_at)}</span></div>`).join("") : `<p class="mute sm">Nothing yet.</p>`}</section>`; }
   if (t === "guilds") body = !A.guilds ? `<p class="mute sm"><span class="spin sm"></span> Loading…</p>` : A.guilds.length ? A.guilds.map(g => `<section class="card"><div class="row gap">${logoHTML(g.logo_url, g.name, 44)}<div class="grow"><h3>${esc(g.name)}</h3>
       <div class="tiny mute">${esc(g.city || "")}, master @${esc(g.master_username || "none")}, ${plural(g.members, "member")}${g.pending ? `, ${g.pending} pending` : ""}</div></div>
       <span class="pill ${g.active ? "good" : "bad"}">${g.active ? "Active" : g.status === "suspended" ? "Suspended" : "Expired"}</span></div>
       <div class="line"><span class="sm">Paid until</span><input type="date" class="timeinput" data-gdate="${g.id}" value="${g.paid_until || ""}" aria-label="Paid until"></div>
       <div class="row gap"><button class="btn sm ghost" data-act="ac-gextend" data-g="${g.id}" data-d="30">+30 days</button><button class="btn sm ghost" data-act="ac-gextend" data-g="${g.id}" data-d="365">+1 year</button>
       <button class="btn sm quiet" data-act="ac-gstatus" data-g="${g.id}" data-v="${g.status === "suspended" ? "active" : "suspended"}">${g.status === "suspended" ? "Reactivate" : "Suspend"}</button>
-      <button class="btn sm quiet" data-act="ac-gview" data-g="${g.id}" data-n="${esc(g.name)}">Leaderboard</button></div></section>`).join("") : `<section class="card"><p class="mute sm">No guilds yet. Create a guild master code and give it to a gym.</p></section>`;
+      <button class="btn sm quiet" data-act="ac-gview" data-g="${g.id}" data-n="${esc(g.name)}">Leaderboard</button><button class="btn sm danger" data-act="ac-delguild" data-g="${g.id}" data-n="${esc(g.name)}">Delete</button></div></section>`).join("") : `<section class="card"><p class="mute sm">No guilds yet. Create a guild master code and give it to a gym.</p></section>`;
   if (t === "codes") body = !A.codes ? `<p class="mute sm"><span class="spin sm"></span> Loading…</p>` : `<section class="card">${A.codes.length ? A.codes.map(c => { const exp = c.expires_at && new Date(c.expires_at) < new Date();
       const st = c.used_by_username ? `Used by @${esc(c.used_by_username)} for ${esc(c.guild_name || "a gym")}` : c.revoked ? "Revoked" : exp ? "Expired" : `Unused, ${c.grant_days} free days${c.expires_at ? `, valid until ${fmtDate(c.expires_at)}` : ""}`;
       return `<div class="line"><div><b class="num code">${esc(c.code)}</b><div class="tiny mute">${st}${c.note ? `. ${esc(c.note)}` : ""}</div></div>
@@ -196,7 +198,7 @@ function viewAdmin(C){
   if (t === "users") body = `<section class="card"><div class="row gap"><input id="us-q" class="input grow" placeholder="Search username or name" value="${esc(A.q || "")}"><button class="btn sm" data-act="ac-usearch">Search</button></div></section>
     ${!A.users ? "" : `<section class="card">${A.users.length ? A.users.map(u => `<div class="line"><div><b>${esc(u.display_name || u.username)}</b> <span class="pill">${ROLE_NAME[u.role]}</span>
       <div class="tiny mute">@${esc(u.username)}${u.guild_name ? `, ${esc(u.guild_name)} (${esc(u.membership)})` : ""}, joined ${fmtDate(u.created_at)}, last active ${fmtDate(u.last_seen)}${u.bought ? `, ${u.bought} crystals bought` : ""}${u.pass ? ", Pass" : ""}</div></div>
-      <button class="btn sm quiet" data-act="ac-resetpw" data-u="${u.id}" data-n="${esc(u.username)}">Reset password</button></div>`).join("") : `<p class="mute sm">No users found.</p>`}</section>`}`;
+      <div class="row gap wrap"><button class="btn sm ghost" data-act="ac-grant" data-u="${u.id}" data-n="${esc(u.username)}">Crystals</button><button class="btn sm quiet" data-act="ac-resetpw" data-u="${u.id}" data-n="${esc(u.username)}">Reset password</button>${u.role === "owner" ? "" : `<button class="btn sm danger" data-act="ac-deluser" data-u="${u.id}" data-n="${esc(u.username)}">Delete</button>`}</div></div>`).join("") : `<p class="mute sm">No users found.</p>`}</section>`}`;
   return segs([["overview", "Overview"], ["guilds", "Guilds"], ["codes", "Codes"], ["users", "Users"]], t, "ac-atab") + body;
 }
 
@@ -210,7 +212,7 @@ async function guildLoad(force){
     const a = acct();
     if (a.role === "owner"){
       const A = UI.g.admin = UI.g.admin || {}, t = UI.atab || "overview";
-      if (t === "overview" && (!A.stats || force)){ A.stats = await Cloud.rpc("owner_stats"); changed = true; }
+      if (t === "overview" && (!A.stats || force)){ A.stats = await Cloud.rpc("owner_stats"); A.log = await Cloud.rpc("owner_log_recent"); changed = true; }
       if (t === "guilds" && (!A.guilds || force)){ A.guilds = await Cloud.rpc("owner_guilds"); changed = true; }
       if (t === "codes" && (!A.codes || force)){ A.codes = await Cloud.rpc("owner_codes"); changed = true; }
       if (t === "users" && (!A.users || force)){ A.users = await Cloud.rpc("owner_users", {p_search: A.q || ""}); changed = true; }
@@ -362,6 +364,24 @@ document.addEventListener("click", async e => {
           modal(`<h2>${esc(b.dataset.n)}</h2><p class="tiny mute">Overall, this week</p>${rows.length ? `<ol class="board">${rows.map(r => `<li><span class="rk num">${r.rank}</span><span class="nm">${esc(r.display_name || r.username)}<span class="tiny mute">@${esc(r.username)}</span></span><span class="sc num">${r.score}</span></li>`).join("")}</ol>` : `<p class="mute sm">No members yet.</p>`}<button class="btn" data-act="close">Close</button>`); }
         catch(err){ modal(`<h2>${esc(b.dataset.n)}</h2><p class="bad-t sm">${esc(err.message)}</p><button class="btn" data-act="close">Close</button>`); } return; }
       case "ac-usearch": UI.g.admin.q = $("#us-q").value; UI.g.admin.users = null; render(); return guildLoad();
+      case "ac-grant": modal(`<h2>Crystals for @${esc(b.dataset.n)}</h2><p class="sm mute">Positive adds, negative removes. The balance never goes below 0. Every change is logged.</p>
+        <label class="lab" for="gr-n">Amount</label><input id="gr-n" class="input" inputmode="numeric" value="50"><label class="lab" for="gr-r">Reason</label><input id="gr-r" class="input" maxlength="120" placeholder="Giveaway, refund, test">
+        <p class="err" id="grerr"></p><button class="btn" data-act="ac-grant-save" data-u="${esc(b.dataset.u)}">Apply</button>`); return;
+      case "ac-grant-save": { const n = parseInt($("#gr-n").value, 10); if (!n || n < -5000 || n > 5000) return void ($("#grerr").textContent = "Enter a number between -5000 and 5000");
+        try { const r = await busy(() => Cloud.rpc("owner_grant_crystals", {p_user: b.dataset.u, p_amount: n, p_reason: $("#gr-r").value}), "Saving…"); closeModal(); UI.g.admin.users = null; UI.g.admin.log = null; render(); guildLoad(); toast(`@${r.username} now has ${r.balance} bought crystals`); }
+        catch(err){ $("#grerr").textContent = err.message; } return; }
+      case "ac-deluser": modal(`<h2>Delete @${esc(b.dataset.n)}?</h2><p class="sm mute">This permanently removes the account, all workouts, scores and guild membership. Payment records are kept without a name. It cannot be undone.</p>
+        <label class="lab" for="du-c">Type the username to confirm</label><input id="du-c" class="input" autocomplete="off"><p class="err" id="duerr"></p>
+        <div class="grid2"><button class="btn ghost" data-act="close">Cancel</button><button class="btn danger" data-act="ac-deluser-do" data-u="${esc(b.dataset.u)}" data-n="${esc(b.dataset.n)}">Delete forever</button></div>`); return;
+      case "ac-deluser-do": { if ($("#du-c").value.trim().toLowerCase() !== b.dataset.n) return void ($("#duerr").textContent = "Username does not match");
+        try { await busy(() => Cloud.rpc("owner_delete_user", {p_user: b.dataset.u}), "Deleting…"); closeModal(); UI.g.admin.users = null; UI.g.admin.stats = null; UI.g.admin.log = null; render(); guildLoad(); toast("User deleted"); }
+        catch(err){ $("#duerr").textContent = err.message; } return; }
+      case "ac-delguild": modal(`<h2>Delete ${esc(b.dataset.n)}?</h2><p class="sm mute">The guild, its member list and join code are removed. Members keep their own accounts and training. The guild master becomes a normal participant. This cannot be undone. To stop a gym temporarily, use Suspend instead.</p>
+        <label class="lab" for="dg-c">Type the guild name to confirm</label><input id="dg-c" class="input" autocomplete="off"><p class="err" id="dgerr"></p>
+        <div class="grid2"><button class="btn ghost" data-act="close">Cancel</button><button class="btn danger" data-act="ac-delguild-do" data-g="${esc(b.dataset.g)}" data-n="${esc(b.dataset.n)}">Delete forever</button></div>`); return;
+      case "ac-delguild-do": { if ($("#dg-c").value.trim().toLowerCase() !== b.dataset.n.toLowerCase()) return void ($("#dgerr").textContent = "Name does not match");
+        try { await busy(() => Cloud.rpc("owner_delete_guild", {p_guild: b.dataset.g}), "Deleting…"); closeModal(); UI.g.admin.guilds = null; UI.g.admin.stats = null; UI.g.admin.log = null; render(); guildLoad(); toast("Guild deleted"); }
+        catch(err){ $("#dgerr").textContent = err.message; } return; }
       case "ac-resetpw": modal(`<h2>Reset password for @${esc(b.dataset.n)}</h2><p class="sm mute">Tell them the new password in person. They can change it in Settings.</p>
         <label class="lab" for="rpw">New password</label><input id="rpw" class="input" autocomplete="off" value="${_randPw()}"><p class="err" id="rpwerr"></p>
         <button class="btn" data-act="ac-resetpw-save" data-u="${esc(b.dataset.u)}">Set password</button>`); return;

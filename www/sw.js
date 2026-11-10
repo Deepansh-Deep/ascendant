@@ -1,5 +1,5 @@
 // Ascendant offline cache. Bump VERSION on every release so phones pick up the update.
-const VERSION = "ascendant-2.1.0";
+const VERSION = "ascendant-2.1.1";
 const CORE = [
   "./", "./index.html", "./manifest.webmanifest", "./css/app.css",
   "./js/config.js", "./js/core.js", "./js/ui.js", "./js/scoring.js", "./js/cloud.js", "./js/views.js", "./js/account.js", "./js/boot.js", "./js/hunter3d.js", "./vendor/three-bundle.js",

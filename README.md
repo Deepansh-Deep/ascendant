@@ -166,3 +166,14 @@ After editing `www/js/scoring.js`, copy it to `supabase/functions/_shared/scorin
 - Human base mesh, morph targets, skeleton, weights, eye mesh and textures: MakeHuman and MPFB2 assets, CC0.
 - Generated garments, hair, beards and textures: CC0 (made by the pipeline in this repo).
 - three.js: MIT. Sora, Inter, Barlow Condensed: SIL Open Font License.
+
+## Owner tools (2.1.1)
+
+The owner account (set with the one SQL line in the Going live checklist) always has the Pass, so every cosmetic is unlocked. From the Guild tab the owner can:
+- grant or remove crystals for any user (positive or negative, clamped at zero, every change logged with a reason)
+- delete a user (type the username to confirm). Training data is removed, payment records are kept without a name for accounting
+- delete a guild (type the name to confirm). Members keep their accounts, the master becomes a participant
+- see the last 50 owner actions on the Overview tab
+
+All of it is enforced on the server (`owner_*` functions check the caller's role), not in the app.
+Re-run `supabase/schema.sql` in the SQL editor after pulling this version. It is safe to run again.

@@ -143,6 +143,17 @@ const tab = (p, t) => click(p, `[data-act=tab][data-v=${t}]`);
   await o.waitForSelector('[data-act=ac-resetpw]', { timeout: 15000 }); await click(o, '[data-act=ac-resetpw]');
   await o.fill('#rpw', 'freshpass9'); await click(o, '[data-act=ac-resetpw-save]'); await o.waitForTimeout(1000);
   ok(/Password reset/.test(await textOf(o, 'body')), 'owner resets a member password');
+  // crystals grant through the owner screen
+  await click(o, '[data-act=ac-grant]'); await o.fill('#gr-n', '25'); await o.fill('#gr-r', 'e2e'); await click(o, '[data-act=ac-grant-save]'); await o.waitForTimeout(1200);
+  ok(sql(`select coalesce(max(w.bought),0) from public.wallets w join public.profiles p on p.id = w.user_id where p.username = '${P}'`) !== '0' && sql(`select count(*) from public.owner_log where action = 'grant_crystals' and target_name = '${P}'`) === '1', 'owner grants crystals from the app and it is logged');
+  // delete needs the exact username typed
+  await o.waitForSelector('[data-act=ac-deluser]', { timeout: 15000 }); await click(o, '[data-act=ac-deluser]');
+  await o.fill('#du-c', 'wrong'); await click(o, '[data-act=ac-deluser-do]'); await o.waitForTimeout(400);
+  ok(/does not match/.test(await textOf(o, 'body')) && sql(`select count(*) from public.profiles where username = '${P}'`) === '1', 'delete is refused until the username is typed correctly');
+  await click(o, '[data-act=close]');
+  // owner has no delete button on his own row
+  await o.fill('#us-q', OWNER); await click(o, '[data-act=ac-usearch]'); await o.waitForTimeout(1500);
+  ok(await o.$$eval('[data-act=ac-deluser]', n => n.length) === 0, 'owner row has no delete button');
 
   console.log('new phone restore');
   await tab(r, 'home'); await r.waitForTimeout(3500);

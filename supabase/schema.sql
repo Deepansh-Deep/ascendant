@@ -233,7 +233,7 @@ begin
       'status', mg.status, 'paid_until', mg.paid_until, 'active', public._guild_active(mg),
       'members', (select count(*) from public.memberships where guild_id = mg.id and status = 'approved'),
       'pending', (select count(*) from public.memberships where guild_id = mg.id and status = 'pending')) end,
-    'wallet', json_build_object('bought', coalesce(w.bought, 0), 'pass', coalesce(w.pass, false)),
+    'wallet', json_build_object('bought', coalesce(w.bought, 0), 'pass', coalesce(w.pass, false) or p.role = 'owner'),
     'server_time', now());
 end $$;
 
@@ -603,6 +603,76 @@ begin
   return json_build_object('credited', true, 'crystals', pu.crystals, 'pass', pu.pass);
 end $$;
 
+-- ---------------------------------------------------------------- owner tools (v2.2)
+-- Payment records survive account deletion (kept for accounting, no longer tied to a person).
+do $$ begin
+  alter table public.purchases alter column user_id drop not null;
+  alter table public.purchases drop constraint if exists purchases_user_id_fkey;
+  alter table public.purchases add constraint purchases_user_id_fkey foreign key (user_id) references public.profiles(id) on delete set null;
+exception when others then raise notice 'purchases fk: %', sqlerrm; end $$;
+
+create table if not exists public.owner_log (
+  id          uuid primary key default gen_random_uuid(),
+  owner_id    uuid,
+  action      text not null,
+  target_id   uuid,
+  target_name text not null default '',
+  detail      jsonb not null default '{}'::jsonb,
+  created_at  timestamptz not null default now()
+);
+alter table public.owner_log enable row level security;
+revoke all on public.owner_log from anon, authenticated;
+
+create or replace function public.owner_grant_crystals(p_user uuid, p_amount int, p_reason text)
+returns json language plpgsql security definer set search_path = public as $$
+declare t public.profiles; nb int;
+begin
+  perform public._require_owner();
+  if p_amount is null or p_amount = 0 or p_amount < -5000 or p_amount > 5000 then raise exception 'Amount must be between -5000 and 5000, not zero'; end if;
+  select * into t from public.profiles where id = p_user;
+  if not found then raise exception 'User not found'; end if;
+  insert into public.wallets (user_id) values (p_user) on conflict do nothing;
+  update public.wallets set bought = greatest(0, bought + p_amount), updated_at = now() where user_id = p_user returning bought into nb;
+  insert into public.owner_log (owner_id, action, target_id, target_name, detail)
+    values (auth.uid(), 'grant_crystals', p_user, t.username, json_build_object('amount', p_amount, 'balance', nb, 'reason', left(coalesce(p_reason, ''), 120))::jsonb);
+  return json_build_object('username', t.username, 'balance', nb);
+end $$;
+
+create or replace function public.owner_delete_user(p_user uuid)
+returns void language plpgsql security definer set search_path = public as $$
+declare t public.profiles;
+begin
+  perform public._require_owner();
+  if p_user = auth.uid() then raise exception 'You cannot delete your own account'; end if;
+  select * into t from public.profiles where id = p_user;
+  if not found then raise exception 'User not found'; end if;
+  if t.role = 'owner' then raise exception 'An owner account cannot be deleted from the app'; end if;
+  if exists (select 1 from public.guilds where master_id = p_user) then raise exception 'He runs a guild. Delete or reassign the guild first'; end if;
+  insert into public.owner_log (owner_id, action, target_id, target_name, detail) values (auth.uid(), 'delete_user', p_user, t.username, '{}'::jsonb);
+  delete from auth.users where id = p_user;
+end $$;
+
+create or replace function public.owner_delete_guild(p_guild uuid)
+returns void language plpgsql security definer set search_path = public as $$
+declare g public.guilds;
+begin
+  perform public._require_owner();
+  select * into g from public.guilds where id = p_guild;
+  if not found then raise exception 'Guild not found'; end if;
+  insert into public.owner_log (owner_id, action, target_id, target_name, detail)
+    values (auth.uid(), 'delete_guild', p_guild, g.name, json_build_object('master_id', g.master_id)::jsonb);
+  if g.master_id is not null then update public.profiles set role = 'participant' where id = g.master_id and role = 'guild_master'; end if;
+  delete from public.guilds where id = p_guild;
+end $$;
+
+create or replace function public.owner_log_recent()
+returns table (action text, target_name text, detail jsonb, created_at timestamptz)
+language plpgsql stable security definer set search_path = public as $$
+begin
+  perform public._require_owner();
+  return query select l.action, l.target_name, l.detail, l.created_at from public.owner_log l order by l.created_at desc limit 50;
+end $$;
+
 -- ---------------------------------------------------------------- grants
 revoke all on all functions in schema public from public, anon, authenticated;
 grant execute on function public.username_available(text), public.check_master_code(text) to anon, authenticated;
@@ -614,7 +684,7 @@ grant execute on function
   public.sync_push(jsonb, jsonb), public.sync_pull(timestamptz), public.reset_my_training(),
   public.guild_leaderboard(text, text, uuid), public.my_competition_history(),
   public.owner_create_codes(int, text, int, int), public.owner_codes(), public.owner_revoke_code(text), public.owner_guilds(),
-  public.owner_set_guild(uuid, date, text), public.owner_users(text), public.owner_stats(), public.am_owner(),
+  public.owner_set_guild(uuid, date, text), public.owner_grant_crystals(uuid, int, text), public.owner_delete_user(uuid), public.owner_delete_guild(uuid), public.owner_log_recent(), public.owner_users(text), public.owner_stats(), public.am_owner(),
   public.my_purchases(), public.list_products()
 to authenticated;
 grant execute on function
