@@ -18,6 +18,7 @@ function render(){
   const root = document.documentElement;
   const pt = UI.previewItem && CAT[UI.previewItem] && CAT[UI.previewItem].slot === "theme" ? CAT[UI.previewItem].key : null;
   root.dataset.theme = pt || (S && S.theme) || "gold";
+  root.dataset.font = fontKey();
   if (UI.auth){ renderAuth(); $("#nav").innerHTML = ""; $("#pbar").innerHTML = ""; return; }
   if (!S || UI.onb){ renderOnboarding(); $("#nav").innerHTML = ""; return; }
   const C = compute();
@@ -47,8 +48,12 @@ async function mountStage(){
     await api.setLook(L);
     if (!el.isConnected) return;
     if (S && !UI.onb && !UI.auth){ const C = compute(); api.setBody({level: C.level, stages: C.body.stages});
-      const a = CAT["aura:" + L.aura]; api.setAura(a && a.hex, a && a.key !== "none" ? Math.max(0.4, C.aura) : 0); }
-    else { api.setBody({level:1, stages:{}}); api.setAura(null, 0); }
+      const a = CAT["aura:" + L.aura]; api.setAura(a && a.hex, a && a.key !== "none" ? Math.max(0.4, C.aura) : 0);
+      const tl = S.logs[TODAY()], trained = !!(tl && tl.type === "workout" && tl.saved && daySets(tl)), fxc = (a && a.key !== "none" && a.hex) || FX.accent();
+      const charged = trained && (UI.tab === "home" || el.classList.contains("cer-stage"));
+      api.setCharged(charged, fxc);
+      if (charged && UI.justTrained && !$("#cer").innerHTML){ UI.justTrained = false; api.burst(fxc); } }
+    else { api.setBody({level:1, stages:{}}); api.setAura(null, 0); api.setCharged(false); }
     api.setPose(L.pose || "relaxed");
     api.view(opts.view || "front");
     el.classList.add("live");
@@ -78,7 +83,7 @@ function viewHome(C){
     <button class="stage-cta" data-act="tab" data-v="hunter">Customize</button>
     <div class="hero-info">
       <div class="hero-id">${hexBadge(C.rank[1], 54, "rank")}
-        <div class="hid"><div class="h-name">${esc(S.hunterName || S.profile.name)}</div><div class="h-user">@${esc(S.profile.name)}</div><div class="h-tags"><span>${C.rank[2]} rank</span><span>${C.evo[1]} form</span></div></div></div>
+        <div class="hid"><div class="h-name"><span class="glow" data-rank="${C.rank[1]}">${esc(S.hunterName || S.profile.name)}</span></div><div class="h-user">@${esc(S.profile.name)}</div><div class="h-tags"><span>${C.rank[2]} rank</span><span>${C.evo[1]} form</span>${doneToday ? `<span class="charged">Charged</span>` : ""}</div></div></div>
       <div class="lvl-row"><span class="lvl">Level <b class="num">${C.level}</b></span><span class="xp num">${nf(C.into)} / ${nf(C.need)} XP</span></div>
       <div class="xpbar" role="progressbar" aria-valuenow="${xpPct}" aria-valuemin="0" aria-valuemax="100"><i style="width:${xpPct}%"></i></div>
       <div class="evo-next">${nx ? `Next evolution: <b>${nx[1]}</b> at level ${nx[0]}, ${nf(xpAt(nx[0]) - C.xp)} XP away` : "Final evolution reached"}</div>
@@ -418,6 +423,7 @@ function viewSettings(C){
   <section class="card row gap"><div class="ava">${S.profile.photo ? `<img src="${S.profile.photo}" alt="">` : esc((S.profile.name || "?")[0].toUpperCase())}</div><div class="grow"><h3>@${esc(S.profile.name)}</h3>
     <div class="tiny mute">${S.profile.height || "?"} cm, goal ${S.profile.goal} kg, since ${fmt(fromKey(S.profile.startDate), {day:"numeric", month:"short", year:"numeric"})}</div></div><button class="btn sm ghost" data-act="edit-profile">Edit</button></section>
   ${secH("Theme")}<div class="tiles">${CATALOG.filter(it => it.slot === "theme").map(it => tile(it, C, S.look, false)).join("")}</div>
+  ${secH("Font", `<span class="tiny mute">Changes the whole app</span>`)}<div class="ftiles">${FONTS.map(f => `<button class="ftile ${fontKey() === f[0] ? "on" : ""}" data-font="${f[0]}" data-act="set-font" data-v="${f[0]}" aria-pressed="${fontKey() === f[0]}"><b>${f[1]}</b><span>${f[2]}</span><i>Level 24, 1,280 XP</i></button>`).join("")}</div>
   ${secH("How you train")}${segs([["gym", "Gym"], ["home", "Home"], ["both", "Both"]], S.style, "style")}
   <p class="tiny mute">Changes which exercises you can pick. Home shows calisthenics, holds and running.</p>
   ${secH("Weekly split", `<span class="tiny mute">Tap to change</span>`)}
@@ -432,7 +438,7 @@ function viewSettings(C){
       <div class="chips">${[0, 60, 90, 120, 180].map(x => `<button class="chip ${st.rest === x ? "on" : ""}" data-act="rest-len" data-v="${x}">${x ? x + "s" : "Off"}</button>`).join("")}</div></div>
     <div class="line"><div><b>Sounds and vibration</b><div class="tiny mute">Set done, timer end, level up.</div></div><button class="switch ${st.sound ? "on" : ""}" data-act="sound" role="switch" aria-checked="${st.sound}" aria-label="Sounds"></button></div></section>
   ${secH("Ranks", `<span class="tiny mute">Level ${C.level}</span>`)}
-  <section class="card ladder">${RANKS.map(r => `<div class="rung ${C.level >= r[0] ? "got" : ""} ${C.rank[0] === r[0] ? "cur" : ""}"><span class="lv">${r[1]}</span><div><b>${r[2]}</b><div class="tiny mute">${r[3]}</div></div><span class="tiny mute num">Lv ${r[0]}</span></div>`).join("")}</section>
+  <section class="card ladder">${RANKS.map(r => `<div class="rung ${C.level >= r[0] ? "got" : ""} ${C.rank[0] === r[0] ? "cur" : ""}"><span class="lv">${r[1]}</span><div><b><span class="glow" data-rank="${r[1]}">${r[2]}</span></b><div class="tiny mute">${r[3]}</div></div><span class="tiny mute num">Lv ${r[0]}</span></div>`).join("")}</section>
   ${secH("How XP works")}<section class="card">${[["Finish a workout", "+50"], ["Every set you log (max 20)", "+2"], ["Beat your last session on an exercise", "+25"], ["Each daily challenge", "+" + XP.daily], ["Beat 3 bests in a week", "+50"], ["Weigh in during a week", "+20 (+10 base)"], ["Unlock a skill", "+40"], ["Train every planned day in a week", "+100"], ["Rest-day check-in", "+5"]].map(x => `<div class="line"><span>${x[0]}</span><b class="num acc-t">${x[1]} XP</b></div>`).join("")}
     <p class="tiny mute">Missed days stay missed. One streak shield per month saves your streak the first time you miss a planned day.</p></section>
   ${secH("Backup and restore")}<section class="card"><p class="sm mute">Your training data lives only on this phone. Save a backup before changing phones or reinstalling.</p>
@@ -501,16 +507,57 @@ queueCeremonies = function(before, C){
   S.seenEvo = Math.max(prevEvo, C.evo[0]); save();
   return r;
 };
+/* Cinematic ceremonies: energy gathers, impact, then the result. Colours follow the hunter's rank. */
+const RANK_COL = {E:"#AEB4BD", D:"#5FBF8F", C:"#5E9BE6", B:"#A77BEA", A:"#E5B24A", S:"#FF5A3C"};
+function cineOpen(inner, col, cls){
+  $("#cer").innerHTML = `<div class="cer cine ${cls || ""}" role="dialog" aria-modal="true" style="--cc:${col}"><div class="cine-veil"></div><div class="cine-core">${inner}</div><button class="btn cine-go" data-act="cer-close">Continue</button></div>`;
+}
+function cineImpact(col, big, onHit){
+  const [x0, y0] = FX.pos(".cine-emb"); SFX.charge(); FX.implode(x0, y0, {col, n: big ? 120 : 76});
+  FX.at(620, () => {
+    const [x, y] = FX.pos(".cine-emb"); (big ? SFX.rankup : SFX.impact)(); buzz(big ? [30, 40, 120, 60, 260] : [20, 30, 140]);
+    FX.flash({alpha: big ? .7 : .45}); FX.glow(x, y, {col, r: big ? 440 : 300, dur: 1000});
+    FX.ring(x, y, {col, width: big ? 10 : 6}); FX.ring(x, y, {col: "#ffffff", width: 3, delay: 90, dur: 900}); if (big) FX.ring(x, y, {col, width: 5, delay: 240, dur: 1100});
+    FX.burst(x, y, {col, n: big ? 160 : 96, speed: big ? 920 : 720}); FX.shake(".cine");
+    FX.embers({col, dur: 90000, rate: big ? 26 : 16, tag: "cer"});
+    if (onHit) onHit();
+  });
+}
 function ceremony(p){
-  SFX.level(); buzz([80, 60, 80, 60, 240]);
-  let inner;
-  if (p.skill){ const u = p.skill; inner = `${hexBadge("★", 96, "cer-hex")}<div class="k">Skill unlocked</div><div class="cer-t">${esc(nodeLabel(u.ex, u.target))}</div><p>+${XP.skill} XP and 3 crystals.</p>`; }
-  else if (p.evo){ inner = `<div class="stage cer-stage" data-stage='{"mode":"hero","interactive":false}'></div><div class="k">Evolution</div><div class="cer-t">${p.evo[1]} form</div><p>${esc(p.evo[2])}</p>`; }
-  else { const rankUp = p.rank[0] !== p.prevRank[0];
-    inner = `${hexBadge(rankUp ? p.rank[1] : String(p.level), 110, "cer-hex")}<div class="k">${rankUp ? "New rank" : "Level up"}</div>
-      ${rankUp ? `<div class="cer-t">${p.rank[2]}</div><p>${p.rank[3]} +5 crystals.</p>` : `<div class="cer-t num">Level ${p.level}</div><p>${nf(200 + 50 * p.level)} XP to the next level.</p>`}`; }
-  $("#cer").innerHTML = `<div class="cer" role="dialog" aria-modal="true"><div class="cer-glow"></div>${inner}<button class="btn" data-act="cer-close">Continue</button></div>`;
+  FX.clear();
+  if (p.reward) return rewardCeremony(p.reward);
+  const emb = h => `<div class="cine-emb"><div class="cine-rays"></div>${h}</div>`;
+  let inner, col = FX.accent(), big = false, onHit = null;
+  if (p.skill){ const u = p.skill; inner = `${emb(hexBadge("★", 116, "cer-hex"))}<div class="k">Skill unlocked</div><div class="cer-t">${esc(nodeLabel(u.ex, u.target))}</div><p>+${XP.skill} XP and 3 crystals.</p>`; }
+  else if (p.evo){ big = true; inner = `${emb(`<div class="stage cer-stage" data-stage='{"mode":"hero","interactive":false}'></div>`)}<div class="k">Evolution</div><div class="cer-t">${p.evo[1]} form</div><p>${esc(p.evo[2])}</p>`;
+    onHit = () => { try { window.Hunter3D.setCharged(true, col); window.Hunter3D.burst(col); } catch(e){} }; }
+  else { const rankUp = p.rank[0] !== p.prevRank[0]; col = RANK_COL[p.rank[1]] || col; big = rankUp;
+    inner = rankUp ? `${emb(hexBadge(p.rank[1], 136, "cer-hex"))}<div class="k">New rank</div><div class="cer-t">${p.rank[2]}</div><p>${p.rank[3]} +5 crystals.</p>`
+      : `${emb(hexBadge(String(p.prevLevel || p.level), 124, "cer-hex"))}<div class="k">Level up</div><div class="cer-t">Level ${p.level}</div><p>${nf(200 + 50 * p.level)} XP to the next level.</p>`;
+    if (!rankUp && p.prevLevel) onHit = () => FX.count(".cine-emb .hexb b", p.prevLevel, p.level, 420); }
+  cineOpen(inner, col, big ? "big" : "");
   if (p.evo){ const app = $("#app .stage"); if (app) app.classList.remove("stage"); mountStage(); }
+  if (FX.reduced){ const n = $(".cine-emb .hexb b"); if (n && p.level && !big) n.textContent = p.level; SFX.level(); buzz([80, 60, 240]); return; }
+  cineImpact(col, big, onHit);
+}
+function rewardCeremony(r){
+  const col = FX.accent();
+  cineOpen(`<div class="k">Workout complete</div>
+    <div class="rw-xp"><span class="num">+<span id="rw-n">${FX.reduced ? nf(r.tot) : 0}</span></span><small>XP</small></div>
+    ${r.gained > 0 ? `<span class="rw-cry">${CRY} +${r.gained} crystals</span>` : ""}
+    <ul class="rw-list">${r.items.map((i, n) => `<li style="--i:${n}"><span>${esc(i[0])}</span><b>+${i[1]}</b></li>`).join("")}</ul>
+    ${r.prs.length ? `<div class="rw-prs" style="--i:${r.items.length}">${r.prs.map(e => `<span>New best: ${esc(e)}</span>`).join("")}</div>` : ""}
+    <div class="rw-lv" style="--i:${r.items.length + 1}"><div class="row between"><span>Level ${r.lv0}</span><span>${r.up ? "Level up" : `${nf(r.left)} XP to level ${r.lv0 + 1}`}</span></div>
+      <div class="rw-bar"><i style="width:${FX.reduced ? r.p1 : r.p0}%"></i></div></div>`, col, "reward");
+  SFX.reward(); buzz([30, 40, 90]);
+  if (FX.reduced) return;
+  const [x, y] = FX.pos(".rw-xp"); let lastTick = 0;
+  FX.glow(x, y, {col, r: 300, dur: 1300}); FX.ring(x, y, {col, r1: innerWidth * .95, dur: 800}); FX.burst(x, y, {col, n: 80, speed: 660});
+  FX.embers({col, dur: 90000, rate: 14, tag: "cer"});
+  FX.at(160, () => { FX.fountain(x, y + 26, {col, dur: 950, w: 70});
+    FX.count("#rw-n", 0, r.tot, 1050, nf, () => { const n = performance.now(); if (n - lastTick > 70){ lastTick = n; SFX.tick(); } }); });
+  FX.at(750 + r.items.length * 130, () => { const b = $(".rw-bar i"); if (b) b.style.width = r.p1 + "%"; });
+  if (r.up) FX.at(1900 + r.items.length * 130, () => { const bar = $(".rw-bar"); if (!bar) return; const q = bar.getBoundingClientRect(); FX.burst(q.right, q.top + q.height / 2, {col, n: 46, speed: 520}); FX.ring(q.right, q.top, {col, r1: 160, dur: 500, width: 4}); buzz(40); });
 }
 async function makeCard(kind){
   try { await document.fonts.ready; } catch(e){}
@@ -581,13 +628,10 @@ function finish(){
   if (C.weekBonus[wk] && !before.weekBonus[wk]) items.push(["Full week completed", C.weekBonus[wk]]);
   const tot = C.xp - before.xp, gained = C.crystals - before.crystals;
   const prs = L.entries.filter(e => { const b = bestSet(e.ex, e.sets), bb = bestBefore(e.ex, t); return b && bb && b.score > bb.score + 1e-9; }).map(e => e.ex);
-  SFX.done(); buzz(60);
-  modal(`<div class="reward"><div class="sm mute">Today's workout</div><div class="big num">+${tot} XP</div>
-    ${gained > 0 ? `<span class="pill acc">${CRY} +${gained} crystals</span>` : ""}
-    <ul>${items.map(i => `<li><span>${esc(i[0])}</span><b class="num">+${i[1]}</b></li>`).join("")}</ul>
-    ${prs.length ? `<p class="sm"><span class="pill pr">New PR</span> ${prs.map(esc).join(", ")}</p>` : ""}
-    <button class="btn" data-act="close">${UI.queue && UI.queue.length ? "Continue" : "Done"}</button></div>`);
-  render(); scheduleReminders(); UI.board = {};
+  const pct = c => c.level >= 60 ? 100 : Math.round(c.into / c.need * 100), up = C.level > before.level;
+  UI.queue = UI.queue || []; UI.queue.unshift({reward: {tot, gained, items, prs, lv0: before.level, up, p0: pct(before), p1: up ? 100 : pct(C), left: C.need - C.into}});
+  UI.justTrained = true;
+  render(); scheduleReminders(); UI.board = {}; nextCeremony();
 }
 function checkLevelChange(before){ queueCeremonies(before, compute()); if (!$("#layer").innerHTML) nextCeremony(); }
 function curLog(){ return S.logs[logKey()]; }
@@ -621,6 +665,7 @@ document.addEventListener("click", async e => {
   switch (a){
     case "close-scrim": if (e.target === b) closeModal(); return;
     case "close": closeModal(); return;
+    case "set-font": S.settings.font = v === "default" ? "" : v; save(); render(); toast("Font changed"); return;
     case "tab": if (UI.editKey) return toast("Save or discard your log edit first"); UI.tab = v; if (v === "train"){ UI.weekOff = 0; UI.sel = wd(todayD()); }
       if (v !== "hunter"){ UI.preview = null; UI.previewItem = null; UI.previewKind = null; } render(); scrollTo(0, 0); return;
     case "train-tab": UI.trainTab = v; render(); return;
@@ -678,7 +723,7 @@ document.addEventListener("click", async e => {
     case "finish": finish(); return;
     case "t-adj": T.end += (+v) * 1000; T.dur = Math.max(T.dur, Math.round((T.end - Date.now()) / 1000)); drawTimer(); return;
     case "t-skip": stopTimer(); return;
-    case "cer-close": $("#cer").innerHTML = ""; render(); nextCeremony(); return;
+    case "cer-close": FX.clear(); $("#cer").innerHTML = ""; render(); nextCeremony(); return;
     case "checkin": { const before = compute(); S.checkins[TODAY()] = v; save(); render(); toast(`Checked in: ${v.toLowerCase()}`); checkLevelChange(before); return; }
     case "weigh": modal(`<h2>Log bodyweight</h2><p class="mute sm">Weigh in once a week, same time, before breakfast.</p>
       <label class="lab" for="wkg">Today's weight (kg)</label><input id="wkg" class="input" inputmode="decimal" placeholder="${currentWeight()}">

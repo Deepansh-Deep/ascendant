@@ -196,3 +196,9 @@ function lineChart(pts, opt = {}){
 
 /* ---------------- 3D hunter bridge ---------------- */
 function hunterStage(cls, opts){ return `<div class="stage ${cls}" data-stage='${JSON.stringify(opts || {})}'><div class="stage-load"><span class="spin"></span><span>Loading your hunter</span></div></div>`; }
+
+/* ---------------- typefaces (Settings > Font). Files live in www/fonts, all OFL. ---------------- */
+const FONTS = [["default", "Ascendant", "Sora with Inter"], ["inter", "Inter", "Neutral, very readable"], ["manrope", "Manrope", "Soft and modern"], ["outfit", "Outfit", "Round and friendly"],
+  ["grotesk", "Space Grotesk", "Technical with character"], ["rajdhani", "Rajdhani", "Squared, HUD style"], ["oxanium", "Oxanium", "Game interface"], ["exo", "Exo 2", "Sci-fi, wide"],
+  ["orbitron", "Orbitron", "Futuristic headings"], ["chakra", "Chakra Petch", "Angular, tactical"], ["cinzel", "Cinzel", "Carved, regal headings"], ["iron", "Barlow", "Condensed, athletic"], ["system", "JetBrains Mono", "Terminal headings"]];
+const fontKey = () => { const f = S && S.settings && S.settings.font; return FONTS.some(x => x[0] === f) ? f : "default"; };

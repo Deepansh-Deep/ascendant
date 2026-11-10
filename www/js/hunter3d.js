@@ -68,6 +68,13 @@ class HunterEngine {
     this.aura = new THREE.Mesh(new THREE.CircleGeometry(0.9, 64), new THREE.MeshBasicMaterial({ map: discTex, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, color: 0xd4a84f, opacity: 0 }));
     this.aura.rotation.x = -Math.PI / 2; this.aura.position.y = 0.002; scene.add(this.aura);
     this.motes = this._motes(); scene.add(this.motes);
+    // charged aura (after a workout) and burst (level up, workout saved): energy column, back glow, ground shockwave
+    this.column = this._auraColumn(); scene.add(this.column);
+    this.halo = new THREE.Sprite(new THREE.SpriteMaterial({ map: discTex, color: 0xd4a84f, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending }));
+    this.halo.scale.set(2.3, 3.1, 1); this.halo.position.set(0, 1.0, -0.5); scene.add(this.halo);
+    this.shock = new THREE.Mesh(new THREE.RingGeometry(0.93, 1.0, 96), new THREE.MeshBasicMaterial({ color: 0xd4a84f, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide }));
+    this.shock.rotation.x = -Math.PI / 2; this.shock.position.y = 0.004; this.shock.visible = false; scene.add(this.shock);
+    this._charge = 0; this._chargeT = 0; this._burst = 0; this._moteBase = 0; this._moteVis = false;
 
     this.root = new THREE.Group(); scene.add(this.root);
     this.loader = new GLTFLoader();
@@ -90,11 +97,41 @@ class HunterEngine {
     x.fillStyle = gr; x.fillRect(0, 0, 128, 128); const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return t;
   }
   _motes() {
-    const n = 46, geo = new THREE.BufferGeometry(), p = new Float32Array(n * 3), s = new Float32Array(n);
+    const n = 84, geo = new THREE.BufferGeometry(), p = new Float32Array(n * 3), s = new Float32Array(n);
     for (let i = 0; i < n; i++) { const a = Math.random() * Math.PI * 2, r = 0.25 + Math.random() * 0.45; p[i * 3] = Math.cos(a) * r; p[i * 3 + 1] = Math.random() * 1.9; p[i * 3 + 2] = Math.sin(a) * r; s[i] = Math.random(); }
     geo.setAttribute('position', new THREE.BufferAttribute(p, 3)); geo.setAttribute('seed', new THREE.BufferAttribute(s, 1));
     const m = new THREE.PointsMaterial({ size: 0.018, color: 0xd4a84f, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending, map: this._radialTexture() });
     const pts = new THREE.Points(geo, m); pts.visible = false; return pts;
+  }
+  // Flame aura: one layer behind the body (the silhouette glows and licks upward) and a faint layer of wisps in front.
+  _auraColumn() {
+    const geo = new THREE.PlaneGeometry(2.6, 3.2); geo.translate(0, 1.6, 0);
+    const make = (front) => new THREE.ShaderMaterial({ transparent: true, depthWrite: false, depthTest: !front, blending: THREE.AdditiveBlending,
+      uniforms: { uTime: { value: 0 }, uPow: { value: 0 }, uCol: { value: new THREE.Color(0xd4a84f) }, uFront: { value: front ? 1 : 0 } },
+      vertexShader: `varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
+      fragmentShader: `uniform float uTime; uniform float uPow; uniform float uFront; uniform vec3 uCol; varying vec2 vUv;
+        float hash(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+        float noise(vec2 p){ vec2 i = floor(p); vec2 f = fract(p); f = f * f * (3.0 - 2.0 * f);
+          return mix(mix(hash(i), hash(i + vec2(1.0, 0.0)), f.x), mix(hash(i + vec2(0.0, 1.0)), hash(i + vec2(1.0, 1.0)), f.x), f.y); }
+        float fbm(vec2 p){ float v = 0.0; float a = 0.5; for (int i = 0; i < 4; i++){ v += a * noise(p); p = p * 2.03 + vec2(1.7, 9.2); a *= 0.5; } return v; }
+        void main(){
+          float x = (vUv.x - 0.5) * 2.6; float y = vUv.y * 3.2;
+          float n = fbm(vec2(x * 2.0, y * 1.5 - uTime * 1.5));
+          float n2 = fbm(vec2(x * 4.6 + 3.0, y * 2.6 - uTime * 2.7));
+          float w = mix(0.60, 0.40, smoothstep(0.0, 1.6, y)) * (1.0 - smoothstep(1.75, 2.75 + n * 0.5, y));
+          float d = abs(x) / max(w, 0.001) + (n - 0.5) * 0.7;
+          float core = 1.0 - smoothstep(0.5, 1.05, d);
+          float tongues = smoothstep(0.42, 0.85, n2) * (1.0 - smoothstep(0.6, 1.55, d));
+          float a = mix(core * 0.55 + tongues * 0.5, tongues * 0.22, uFront);
+          a *= smoothstep(0.0, 0.14, y) * (1.0 - smoothstep(1.85, 2.95, y + (n - 0.5) * 1.1));
+          a *= 1.0 - smoothstep(1.0, 1.3, abs(x));
+          a = pow(a, 1.45) * 1.9;
+          gl_FragColor = vec4(mix(uCol, vec3(1.0), core * core * 0.28 + tongues * 0.3), a * uPow);
+        }` });
+    const g = new THREE.Group();
+    const back = new THREE.Mesh(geo, make(false)); back.position.z = -0.3; back.renderOrder = -1;
+    const front = new THREE.Mesh(geo, make(true)); front.position.z = 0.42; front.renderOrder = 6;
+    g.add(back, front); g.visible = false; g.userData.mats = [back.material, front.material]; return g;
   }
   // Models normally ship as .glb. Hosts that cannot serve binary files get a JSON wrapper {"glb": base64} instead (config.modelExt = '.glb.json').
   async _loadGLB(gender) {
@@ -237,10 +274,20 @@ class HunterEngine {
     const c = new THREE.Color(color || '#D4A84F');
     this.aura.material.color.copy(c); this.motes.material.color.copy(c);
     this.aura.material.opacity = 0.08 + 0.42 * level;
-    this.motes.visible = level > 0.55 && !REDUCED; this.motes.material.opacity = 0.25 + 0.5 * (level - 0.55);
+    this._moteVis = level > 0.55 && !REDUCED; this._moteBase = this._moteVis ? 0.25 + 0.5 * (level - 0.55) : 0;
+    this.motes.visible = this._moteVis; this.motes.material.opacity = this._moteBase;
     this.rim.color.copy(new THREE.Color(0x9fb7ff).lerp(c, 0.35 * level));
     this._kick();
   }
+  _fxColor(color) {
+    if (!color || !this.column) return; const c = new THREE.Color(color);
+    this.column.userData.mats.forEach(m => m.uniforms.uCol.value.copy(c)); this.halo.material.color.copy(c); this.shock.material.color.copy(c);
+    if (!this._moteVis) this.motes.material.color.copy(c);
+  }
+  // steady aura after training today
+  setCharged(on, color) { if (!this.column) return; this._chargeT = on ? 1 : 0; this._fxColor(color); this._kick(); }
+  // one-off surge: shockwave on the ground, flare, sparks
+  burst(color) { if (!this.column || REDUCED) return; this._fxColor(color); this._burst = 1; this._kick(); }
   on(fn) { this.listeners.add(fn); return () => this.listeners.delete(fn); }
   async snapshot(w = 720, h = 960) {
     await this.ready; if (!this.current) return null;
@@ -383,9 +430,24 @@ class HunterEngine {
       }
       model.scene.rotation.y = this.yaw;
     }
+    // charged aura + burst
+    if (this.column) {
+      this._charge += (this._chargeT - this._charge) * (1 - Math.pow(0.02, dt));
+      if (this._burst > 0) this._burst = Math.max(0, this._burst - dt / 1.5);
+      const b = this._burst, e = b * b, ch = REDUCED ? 0 : this._charge;
+      const pow = ch * (0.8 + 0.12 * Math.sin(this.time * 2.1)) + e * 1.5;
+      this.column.visible = pow > 0.01; this.column.userData.mats.forEach(m => { m.uniforms.uTime.value = this.time; m.uniforms.uPow.value = pow; });
+      this.halo.material.opacity = Math.min(0.7, this._charge * 0.1 + e * 0.45);
+      if (b > 0) { const k = 1 - b, o = 1 - Math.pow(1 - k, 3); this.shock.visible = true; this.shock.scale.setScalar(0.25 + o * 2.2); this.shock.material.opacity = b * b * 0.9; } else this.shock.visible = false;
+      this.key.intensity = 2.4 + e * 3.2;
+      this.motes.visible = this._moteVis || ch > 0.05 || b > 0;
+      this.motes.material.opacity = Math.max(this._moteBase, 0.6 * ch + 0.4 * e);
+      this._moteSpeed = 1 + 3.5 * ch + 9 * e;
+      if (ch > 0.02 || b > 0 || Math.abs(this._chargeT - this._charge) > 0.01) changing = true;
+    }
     if (this.motes.visible) {
-      const p = this.motes.geometry.attributes.position, s = this.motes.geometry.attributes.seed;
-      for (let i = 0; i < p.count; i++) { let y = p.getY(i) + dt * (0.08 + s.getX(i) * 0.1); if (y > 1.95) y = 0; p.setY(i, y); }
+      const p = this.motes.geometry.attributes.position, s = this.motes.geometry.attributes.seed, ms = this._moteSpeed || 1;
+      for (let i = 0; i < p.count; i++) { let y = p.getY(i) + dt * (0.08 + s.getX(i) * 0.1) * ms; if (y > 1.95) y = 0; p.setY(i, y); }
       p.needsUpdate = true;
     }
     // idle only: render at ~30 fps to save battery on phones

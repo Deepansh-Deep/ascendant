@@ -1,6 +1,6 @@
 "use strict";
 /* ===== CONSTANTS ===== */
-const VERSION = "2.1.1";
+const VERSION = "2.2.0";
 const MUSCLES = ["Chest","Back","Shoulders","Biceps","Triceps","Legs","Abs","Cardio"];
 const OPTIONS = {
   Chest:["Bench Press","Incline Dumbbell Press","Chest Press Machine","Pec Deck Fly","Cable Crossover","Push-ups"],
@@ -251,6 +251,24 @@ const SFX = { set:()=>tone([[660,0,.08,"sine",.08]]), done:()=>tone([[523,0,.15]
   level:()=>tone([[392,0,.18],[523,.12,.18],[659,.24,.18],[784,.36,.2],[1047,.5,.6,"sawtooth",.1]]),
   rest:()=>tone([[880,0,.15,"square",.08],[880,.25,.15,"square",.08],[1175,.5,.35,"square",.08]]) };
 
+/* richer synthesis for ceremonies: pitch sweeps and filtered noise, still no audio files */
+function synth(parts){
+  if (!S || !S.settings.sound) return;
+  try { AC = AC || new (window.AudioContext||window.webkitAudioContext)(); if (AC.state === "suspended") AC.resume(); const now = AC.currentTime;
+    parts.forEach(p => { const g = AC.createGain(), t = now + (p.t || 0), d = p.d; let src;
+      g.gain.setValueAtTime(.0001, t); g.gain.linearRampToValueAtTime(p.v ?? .2, t + (p.a ?? .012)); g.gain.exponentialRampToValueAtTime(.0001, t + d);
+      if (p.noise){ const len = Math.ceil(AC.sampleRate * d), buf = AC.createBuffer(1, len, AC.sampleRate), ch = buf.getChannelData(0); for (let i = 0; i < len; i++) ch[i] = Math.random() * 2 - 1;
+        src = AC.createBufferSource(); src.buffer = buf; const f = AC.createBiquadFilter(); f.type = p.ft || "lowpass"; f.frequency.setValueAtTime(p.f0 || 800, t); if (p.f1) f.frequency.exponentialRampToValueAtTime(p.f1, t + d); src.connect(f).connect(g); }
+      else { src = AC.createOscillator(); src.type = p.type || "sine"; src.frequency.setValueAtTime(p.f0, t); if (p.f1) src.frequency.exponentialRampToValueAtTime(p.f1, t + d); src.connect(g); }
+      g.connect(AC.destination); src.start(t); src.stop(t + d + .05); });
+  } catch(e){}
+}
+SFX.charge = () => synth([{f0:90, f1:620, d:.62, type:"sawtooth", v:.045, a:.5}, {noise:1, f0:260, f1:5200, d:.62, v:.07, a:.55, ft:"bandpass"}]);
+SFX.impact = () => synth([{f0:150, f1:36, d:.6, v:.5}, {noise:1, f0:2600, f1:180, d:.38, v:.2}, {f0:523, d:.9, type:"triangle", v:.11, t:.03}, {f0:784, d:1.1, type:"triangle", v:.09, t:.09}, {f0:1047, d:1.4, v:.07, t:.15}]);
+SFX.rankup = () => synth([{f0:130, f1:30, d:.9, v:.55}, {noise:1, f0:3200, f1:140, d:.55, v:.24}, {f0:392, d:1.2, type:"triangle", v:.11, t:.03}, {f0:587, d:1.3, type:"triangle", v:.1, t:.1}, {f0:784, d:1.5, type:"triangle", v:.09, t:.18}, {f0:1175, d:1.9, v:.08, t:.3}, {f0:1568, d:2.1, v:.05, t:.42}]);
+SFX.reward = () => synth([{noise:1, f0:400, f1:6000, d:.3, v:.08, a:.2, ft:"bandpass"}, {f0:110, f1:55, d:.35, v:.3, t:.02}, {f0:659, d:.5, type:"triangle", v:.1, t:.06}, {f0:988, d:.8, type:"triangle", v:.08, t:.16}]);
+SFX.tick = () => synth([{f0:1500, d:.035, type:"square", v:.022}]);
+
 /* ===== REST TIMER ===== */
 const T = {end:0, dur:0, id:null};
 function startTimer(sec){ if (!sec) return; T.dur = sec; T.end = Date.now()+sec*1000; clearInterval(T.id); T.id = setInterval(drawTimer, 250); drawTimer(); }
@@ -343,10 +361,10 @@ function queueCeremonies(_before, C){
   if (!S.seen) S.seen = {level:C.level, skills:C.skills.unlocked.map(skId)};
   const q = [], newSkills = C.skills.unlocked.filter(u => !S.seen.skills.includes(skId(u)));
   newSkills.forEach(u => q.push({skill:u}));
-  if (C.level > S.seen.level) q.push({level:C.level, rank:C.rank, prevRank:rankOf(S.seen.level)});
+  if (C.level > S.seen.level) q.push({level:C.level, prevLevel:S.seen.level, rank:C.rank, prevRank:rankOf(S.seen.level)});
   S.seen = {level:Math.max(S.seen.level, C.level), skills:C.skills.unlocked.map(skId)}; save();
   UI.queue = (UI.queue||[]).concat(q);
   return newSkills;
 }
-function nextCeremony(){ if (UI.queue && UI.queue.length) ceremony(UI.queue.shift()); }
+function nextCeremony(){ if ($("#cer").innerHTML) return; if (UI.queue && UI.queue.length) ceremony(UI.queue.shift()); }
 

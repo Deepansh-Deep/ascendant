@@ -177,3 +177,12 @@ The owner account (set with the one SQL line in the Going live checklist) always
 
 All of it is enforced on the server (`owner_*` functions check the caller's role), not in the app.
 Re-run `supabase/schema.sql` in the SQL editor after pulling this version. It is safe to run again.
+
+## Look and feel (2.2.0)
+
+- **13 typefaces** in Settings > Font, bundled in `www/fonts` (all OFL), saved with the account. Each choice sets `data-font` on `<html>`; the rules live at the end of `www/css/app.css`.
+- **Effects layer** `www/js/fx.js`: one additive canvas for sparks, embers, shockwaves and flashes. Runs only while something is alive, scales down on weak phones, off with reduced motion.
+- **Ceremonies** (`ceremony()` in `views.js`): charge, impact, reveal. Level up, new rank (coloured by rank), skill, evolution, and a workout-complete screen with a counting XP total.
+- **Rank name glow**: `.glow[data-rank]`, stronger at every rank from E to S. The Ranks list in Settings previews each one.
+- **Charged hunter**: after a saved workout the Home hunter carries a flame aura for the rest of the day and bursts once (`setCharged`, `burst` in `hunter3d.js`).
+- Sounds are synthesised (`synth()` in `core.js`), no audio files.
