@@ -126,7 +126,7 @@ const Sync = {
       }
       sy.lastPull = pr.now; sy.at = Date.now();
       this.quietSave(); this.status = "ok"; this.lastError = null;
-      await pushCard();
+      try { await pushCard(); } catch(e){ console.warn("profile card not synced:", e.message); }   // photo and level are extras: never block training sync
       if (pushedDays || applied || !UI.scoredToday){ UI.scoredToday = true; Cloud.fn("compute-scores").catch(() => {}); }
       if (applied && !UI.onb && !UI.editKey) render();
       return true;
