@@ -360,6 +360,7 @@ begin
   if p_logs is not null then
     if jsonb_array_length(p_logs) > 400 then raise exception 'Too many days in one sync'; end if;
     for r in select * from jsonb_array_elements(p_logs) loop
+      if length((r -> 'data')::text) > 100000 then raise exception 'One day of training is too large'; end if;
       insert into public.user_logs (user_id, day, data, updated_at)
       values (uid, (r ->> 'day')::date, case when r -> 'data' = 'null'::jsonb then null else r -> 'data' end, now())
       on conflict (user_id, day) do update set data = excluded.data, updated_at = now();
