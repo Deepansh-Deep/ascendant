@@ -195,8 +195,23 @@ ok((await rpc("owner_delete_user", { p_user: r1.user_id }, ownerT)).ok, "owner d
 ok(!(await login(P1, "newpass123")).ok && sql(`select count(*) from public.profiles where id = '${r1.user_id}'`) === "0", "his account and profile are gone");
 ok(sql(`select count(*) from public.purchases where razorpay_order_id = '${ord.data.order_id}' and user_id is null`) === "1", "his payment record is kept, without a name");
 ok(sql(`select count(*) from public.user_logs where user_id = '${r1.user_id}'`) === "0", "his training data is gone");
+ok(!(await rpc("owner_delete_code", { p_code: CODE }, gmT)).ok, "guild master cannot delete codes");
+ok(!(await rpc("owner_purge_codes", {}, p2T)).ok, "participant cannot purge codes");
+ok(!(await rpc("owner_delete_code", { p_code: CODE }, ownerT)).ok && sql(`select count(*) from public.master_codes where code = '${CODE}'`) === "1", "a code of a live guild cannot be deleted");
 ok((await rpc("owner_delete_guild", { p_guild: yg.id }, ownerT)).ok, "owner deletes the guild");
 ok(sql(`select role from public.profiles where id = '${gm_id}'`) === "participant" && sql(`select count(*) from public.guilds where id = '${yg.id}'`) === "0", "guild is gone, its master is a participant again");
+const mk = await rpc("owner_create_codes", { p_count: 3, p_note: "cleanup", p_grant_days: 30, p_valid_days: 14 }, ownerT);
+ok((await rpc("owner_revoke_code", { p_code: mk.data[0] }, ownerT)).ok, "revoke one of three fresh codes");
+ok((await rpc("owner_delete_code", { p_code: mk.data[0] }, ownerT)).ok && sql(`select count(*) from public.master_codes where code = '${mk.data[0]}'`) === "0", "owner deletes a revoked code for good");
+ok((await rpc("owner_delete_code", { p_code: CODE }, ownerT)).ok, "after the guild is deleted its used code can go too");
+ok((await rpc("owner_revoke_code", { p_code: mk.data[1] }, ownerT)).ok, "revoke another");
+const pg = await rpc("owner_purge_codes", {}, ownerT);
+ok(pg.ok && pg.data >= 1 && sql(`select count(*) from public.master_codes where code = '${mk.data[1]}'`) === "0", "purge removes dead codes", pg.data);
+ok(sql(`select count(*) from public.master_codes where code = '${mk.data[2]}'`) === "1" && (await rpc("check_master_code", { p_code: mk.data[2] })).data === true, "purge leaves a valid unused code alone");
+// the same gym comes back: a fresh code makes a fresh guild for the former master
+const again = await rpc("become_guild_master", { p_code: mk.data[2], p_gym_name: "Yodha Gym", p_city: "Bokaro" }, gmT);
+ok(again.ok, "a former master can register again with a new code", again.data);
+ok((await rpc("owner_delete_guild", { p_guild: again.data.guild_id }, ownerT)).ok, "tidy up the second guild");
 ok((await rpc("owner_delete_user", { p_user: gm_id }, ownerT)).ok, "now the former master can be deleted");
 
 // ---------- 10. account self-service

@@ -194,7 +194,7 @@ function viewAdmin(C){
   if (t === "codes") body = !A.codes ? `<p class="mute sm"><span class="spin sm"></span> Loading…</p>` : `<section class="card">${A.codes.length ? A.codes.map(c => { const exp = c.expires_at && new Date(c.expires_at) < new Date();
       const st = c.used_by_username ? `Used by @${esc(c.used_by_username)} for ${esc(c.guild_name || "a gym")}` : c.revoked ? "Revoked" : exp ? "Expired" : `Unused, ${c.grant_days} free days${c.expires_at ? `, valid until ${fmtDate(c.expires_at)}` : ""}`;
       return `<div class="line"><div><b class="num code">${esc(c.code)}</b><div class="tiny mute">${st}${c.note ? `. ${esc(c.note)}` : ""}</div></div>
-        ${!c.used_by_username && !c.revoked && !exp ? `<div class="row gap"><button class="btn sm ghost" data-act="ac-copy" data-v="${esc(c.code)}">Copy</button><button class="btn sm quiet" data-act="ac-revoke" data-v="${esc(c.code)}">Revoke</button></div>` : ""}</div>`; }).join("") : `<p class="mute sm">No codes yet.</p>`}</section>`;
+        <div class="row gap">${!c.used_by_username && !c.revoked && !exp ? `<button class="btn sm ghost" data-act="ac-copy" data-v="${esc(c.code)}">Copy</button><button class="btn sm quiet" data-act="ac-revoke" data-v="${esc(c.code)}">Revoke</button>` : ""}${!c.used_by_username || !c.guild_name ? `<button class="btn sm danger" data-act="ac-delcode" data-v="${esc(c.code)}">Delete</button>` : ""}</div></div>`; }).join("") : `<p class="mute sm">No codes yet.</p>`}${A.codes.some(c => !c.used_by_username ? (c.revoked || (c.expires_at && new Date(c.expires_at) < new Date())) : !c.guild_name) ? `<button class="btn sm ghost" data-act="ac-purgecodes">Clear all revoked and expired codes</button>` : ""}</section>`;
   if (t === "users") body = `<section class="card"><div class="row gap"><input id="us-q" class="input grow" placeholder="Search username or name" value="${esc(A.q || "")}"><button class="btn sm" data-act="ac-usearch">Search</button></div></section>
     ${!A.users ? "" : `<section class="card">${A.users.length ? A.users.map(u => `<div class="line"><div class="row">${avatarRing(u.avatar, u.display_name || u.username, u.level, 36)}<div><b>${esc(u.display_name || u.username)}</b> <span class="pill">${ROLE_NAME[u.role]}</span>
       <div class="tiny mute">@${esc(u.username)}${u.guild_name ? `, ${esc(u.guild_name)} (${esc(u.membership)})` : ""}, joined ${fmtDate(u.created_at)}, last active ${fmtDate(u.last_seen)}</div></div>
@@ -341,11 +341,13 @@ document.addEventListener("click", async e => {
       case "ac-mkcodes": { const n = +$("#cc-n").value || 1, d = +$("#cc-days").value, va = +$("#cc-valid").value, note = $("#cc-note").value;
         const codes = await busy(() => Cloud.rpc("owner_create_codes", {p_count: n, p_note: note, p_grant_days: isNaN(d) ? 30 : d, p_valid_days: isNaN(va) ? 30 : va}), "Creating…");
         UI.g.admin.newCodes = codes; UI.g.admin.codes = null; render(); toast(`${codes.length} code${codes.length > 1 ? "s" : ""} created`); return; }
+      case "ac-delcode": await busy(() => Cloud.rpc("owner_delete_code", {p_code: v}), "Deleting…"); UI.g.admin.codes = null; render(); guildLoad(); toast("Code deleted"); return;
+      case "ac-purgecodes": { const n = await busy(() => Cloud.rpc("owner_purge_codes", {}), "Clearing…"); UI.g.admin.codes = null; render(); guildLoad(); toast(n ? `${n} dead code${n > 1 ? "s" : ""} cleared` : "Nothing to clear"); return; }
       case "ac-revoke": await Cloud.rpc("owner_revoke_code", {p_code: v}); UI.g.admin.codes = null; render(); guildLoad(); toast("Code revoked"); return;
       case "ac-gextend": { const g = UI.g.admin.guilds.find(x => x.id === b.dataset.g), base = g.paid_until && new Date(g.paid_until) > new Date() ? new Date(g.paid_until) : new Date();
         base.setDate(base.getDate() + +b.dataset.d); const until = keyOf(base);
-        await busy(() => Cloud.rpc("owner_set_guild", {p_guild: g.id, p_paid_until: until, p_status: g.status}));
-        UI.g.admin.guilds = null; UI.g.admin.stats = null; render(); guildLoad(); toast(`${g.name} paid until ${fmtDate(until)}`); return; }
+        await busy(() => Cloud.rpc("owner_set_guild", {p_guild: g.id, p_paid_until: until, p_status: "active"}));
+        UI.g.admin.guilds = null; UI.g.admin.stats = null; render(); guildLoad(); toast(`${g.name} paid until ${fmtDate(until)}, active`); return; }
       case "ac-gstatus": { const g = UI.g.admin.guilds.find(x => x.id === b.dataset.g);
         await busy(() => Cloud.rpc("owner_set_guild", {p_guild: g.id, p_paid_until: g.paid_until, p_status: v}));
         UI.g.admin.guilds = null; render(); guildLoad(); toast(v === "suspended" ? `${g.name} suspended` : `${g.name} reactivated`); return; }

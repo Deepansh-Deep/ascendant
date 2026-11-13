@@ -1,0 +1,35 @@
+name: Apply database patch
+
+# Runs one SQL file from supabase/ against the live database through the Supabase Management API.
+# Needs ONE repository secret: SUPABASE_DB_TOKEN
+#   (supabase.com > Account > Access Tokens > Generate new token, Resource access: the ascendant project,
+#    permission Database > SQL / data operations: read and write).
+# Kept separate from SUPABASE_ACCESS_TOKEN so the function deploy token can stay narrow.
+on:
+  workflow_dispatch:
+    inputs:
+      file:
+        description: 'SQL file inside supabase/'
+        default: 'patch-code-cleanup.sql'
+
+env:
+  PROJECT_REF: ohxwgnffhmpvixbgrceb
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check the token is set
+        run: '[ -n "${{ secrets.SUPABASE_DB_TOKEN }}" ] || { echo "Add the SUPABASE_DB_TOKEN secret first."; exit 1; }'
+      - name: Run the SQL
+        env:
+          TOKEN: ${{ secrets.SUPABASE_DB_TOKEN }}
+          FILE: ${{ inputs.file }}
+        run: |
+          case "$FILE" in */*|*..*) echo "Use a plain file name from supabase/"; exit 1;; esac
+          jq -Rs '{query: .}' "supabase/$FILE" > body.json
+          code=$(curl -sS -o out.json -w '%{http_code}' -X POST "https://api.supabase.com/v1/projects/$PROJECT_REF/database/query" \
+            -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" --data @body.json)
+          cat out.json; echo
+          [ "$code" -lt 300 ] || { echo "Failed with HTTP $code"; exit 1; }
