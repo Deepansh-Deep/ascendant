@@ -29,5 +29,5 @@ jobs:
         # That check does not work with Supabase's new signing keys.
         run: |
           for f in compute-scores upload-logo owner-admin; do
-            supabase functions deploy "$f" --project-ref "$PROJECT_REF" --no-verify-jwt --use-api
+            supabase functions deploy "$f" --project-ref "$PROJECT_REF" --no-verify-jwt --use-api --yes
           done
