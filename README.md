@@ -175,3 +175,6 @@ Re-run `supabase/schema.sql` in the SQL editor after pulling this version. It is
 - Guild masters can remove a member's photo, the owner can remove anyone's (`master_clear_avatar`, `owner_clear_avatar`, logged).
 - Outfits unlock by level: Signature from the start, Urban at level 10, Royal at level 25 (`OUTFIT_LEVEL` in `ui.js`), with an unlock ceremony. The character art itself is frozen.
 - After pulling 3.3, re-run `supabase/schema.sql` in the SQL editor (safe to run again).
+
+## In-app updates (3.3.5+)
+The update banner no longer opens a browser. `AppUpdater` (android/app/src/main/java/com/ascendant/gym/AppUpdater.java) downloads the APK into the app's private cache with a progress bar, then refuses to hand it to Android's installer unless it is the same package, a higher versionCode, and signed with the same key as the installed app. That guarantees an update can never push a user into uninstalling (which is what deletes local data). Before downloading, the app saves and syncs. Android still shows its own confirm screen; that cannot be skipped for apps outside the Play Store. Never change the release signing key: every user would have to reinstall.
