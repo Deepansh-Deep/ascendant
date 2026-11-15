@@ -576,3 +576,18 @@ textarea.input{min-height:110px;padding:12px;font-size:12px}
 .cine .grid2.cine-go .btn:not(.ghost){background:var(--cc);color:#0A0B0E}
 .board li{grid-template-columns:30px auto 1fr auto}
 .glow-ring{isolation:isolate}
+/* 3.4: global ranking, guild pages, custom exercises, admin stats, poster */
+.board-h{margin:4px 0 6px;text-transform:uppercase;letter-spacing:.08em}
+.board-you{margin-top:8px;padding-top:8px;border-top:1px dashed var(--line,rgba(255,255,255,.14))}
+.gtag{background:none;border:0;padding:0;color:var(--acc);font:inherit;text-decoration:underline;text-underline-offset:2px;cursor:pointer}
+.choice{border-color:var(--acc)}
+.code-mid{font-size:22px;font-weight:800;letter-spacing:.14em;color:var(--acc)}
+.chip.custom{border-style:dashed}
+.chip.add{border-style:dashed;opacity:.85;display:inline-flex;align-items:center;gap:4px}
+.chip.add svg{width:14px;height:14px}
+.wkbars{display:grid;grid-template-columns:repeat(8,1fr);gap:6px;align-items:end;height:120px;margin:6px 0 10px}
+.wkbars div{display:flex;flex-direction:column;align-items:center;justify-content:flex-end;height:100%;gap:2px}
+.wkbars i{display:block;width:100%;min-height:3px;border-radius:4px 4px 0 0;background:var(--acc)}
+.wkbars b{font-size:11px}.wkbars span{font-size:9px;color:var(--mute,#8a8f98);white-space:nowrap}
+.poster-img{display:block;width:100%;max-width:360px;margin:12px auto;border-radius:10px;border:1px solid var(--line,rgba(255,255,255,.12))}
+.center{text-align:center}

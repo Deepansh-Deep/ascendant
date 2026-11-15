@@ -178,3 +178,14 @@ Re-run `supabase/schema.sql` in the SQL editor after pulling this version. It is
 
 ## In-app updates (3.3.5+)
 The update banner no longer opens a browser. `AppUpdater` (android/app/src/main/java/com/ascendant/gym/AppUpdater.java) downloads the APK into the app's private cache with a progress bar, then refuses to hand it to Android's installer unless it is the same package, a higher versionCode, and signed with the same key as the installed app. That guarantees an update can never push a user into uninstalling (which is what deletes local data). Before downloading, the app saves and syncs. Android still shows its own confirm screen; that cannot be skipped for apps outside the Play Store. Never change the release signing key: every user would have to reinstall.
+
+## 3.4.0: global ranking, guild pages, owner tools
+- **Guild tab**: "My guild" and "Global" for everyone; the owner also has "Admin". The owner can join one gym like any member (no 30-day stay for him) and observe every guild from Admin > Guilds > Leaderboard without being counted.
+- **Global ranking** (`global_leaderboard`): approved members of active guilds who chose it (`memberships.global`, asked once after approval, changeable any time). Top 10 plus the viewer's own row, gym name on every row. Tapping a gym opens `guild_page` (its top 10 among opted-in members; a gym's own members and the owner see everyone).
+- **Guild boards** show the top 10 plus "You: #n". Guild masters still see every member under Manage.
+- **30-day stay**: an approved participant cannot leave for 30 days (`leave_guild`). Ends early if the guild goes inactive; the guild master can remove and the owner can release (`owner_release_member`) any time.
+- **Owner**: member join codes per guild with New code (`owner_regen_join_code`), user stats (sign-ups, active 7/30 days, weekly sign-ups) and a CSV export (`owner_export_users`). APK downloads come from GitHub's public release counts.
+- **Gym poster**: Admin > Guilds > Poster (and the guild master's Manage > Join code) draws an A4 PNG with a QR code to `site/join.html?c=CODE&g=Gym`, which shows the code and the download button. QR library: `www/vendor/qrcode.min.js` (MIT).
+- **Custom exercises** (`S.custom`, core.js): name, muscle, measure. Personal XP and history only; `scoring.js` strips them before any guild score. New built-ins: Jumping Jacks, High Knees, Battle Ropes, Elliptical, Walking, Box Jumps, Bicycle Crunch, Side Plank. Select all / Deselect all per muscle.
+- **Updates**: the Android app no longer registers a service worker (it served the old version's files after an update). The web app fetches code network-first and reloads once when a new version takes over.
+- Database: `supabase/patch-3.4.sql` upgrades a live 3.3 database (safe to re-run); `schema.sql` has everything for a fresh one.

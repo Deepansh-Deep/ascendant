@@ -130,6 +130,19 @@ document.addEventListener("visibilitychange", () => {   // back from the permiss
     if (S.seenReport !== thisMon && S.profile.startDate < thisMon){ const C = compute(); if (gradeOf(weekStats(C, addDays(mondayOf(todayD()), -7)))) setTimeout(reportCard, 700); else { S.seenReport = thisMon; save(); } } })();
   scheduleReminders();
   checkForUpdate();
-  if ("serviceWorker" in navigator && location.protocol === "https:" && !/claude|claudeusercontent/.test(location.hostname)) navigator.serviceWorker.register("sw.js").catch(() => {});
+  /* Offline cache for the WEB app only. The Android app already ships its files inside the APK; an old service worker there
+     served the previous version's files after an update (the "update twice" problem), so it is removed. */
+  const native = !!(window.Capacitor && Capacitor.isNativePlatform && Capacitor.isNativePlatform());
+  if ("serviceWorker" in navigator){
+    if (native || /claude|claudeusercontent/.test(location.hostname)){
+      navigator.serviceWorker.getRegistrations().then(rs => rs.forEach(r => r.unregister())).catch(() => {});
+      if (window.caches) caches.keys().then(ks => ks.filter(k => k.startsWith("ascendant-")).forEach(k => caches.delete(k))).catch(() => {});
+    } else if (location.protocol === "https:"){
+      // a new version takes over at once and the page reloads one time, instead of needing a second visit
+      const hadController = !!navigator.serviceWorker.controller; let reloaded = false;
+      navigator.serviceWorker.addEventListener("controllerchange", () => { if (!hadController || reloaded) return; reloaded = true; if (S) save(); location.reload(); });
+      navigator.serviceWorker.register("sw.js").then(r => r.update()).catch(() => {});
+    }
+  }
 })();
 document.addEventListener("visibilitychange", () => { if (!document.hidden) Sync.schedule(800); });

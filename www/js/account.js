@@ -5,7 +5,7 @@
    guild leaderboard, guild master management, owner admin panel, shop checkout.
    ===================================================================== */
 const ROLE_NAME = {owner: "Owner", guild_master: "Guild Master", participant: "Participant"};
-UI.g = {board: {}, prev: {}};
+UI.g = {board: {}, prev: {}, glob: {}};
 const fmtDate = d => d ? new Date(d).toLocaleDateString("en-IN", {day: "numeric", month: "short", year: "numeric"}) : "never";
 const rupees = p => "₹" + (p / 100).toLocaleString("en-IN");
 const plural = (n, w) => `${n} ${w}${n === 1 ? "" : "s"}`;
@@ -110,44 +110,91 @@ function localScores(C){
     ${scoreExplain(sc).map(([k, n, v, why]) => `<div class="score ${k === "overall" ? "ov" : ""}"><div class="row between"><b>${n}</b><b class="num">${v}</b></div><i class="track"><i style="width:${v}%"></i></i><span class="tiny mute">${why}</span></div>`).join("")}
     <p class="tiny mute">The server recalculates these from your synced workouts with the same formulas, so nobody can type in a score. Beginners can top Consistency and Progress because both compare you with your own past. Purchases never affect any score.</p></section>`;
 }
-function boardCard(gid){
-  const cat = UI.gcat || "overall", per = UI.gper || "week", key = (gid || "me") + ":" + cat + ":" + per, b = UI.g.board[key];
+function boardRow(r, opts){
+  const me = r.is_me, photo = me ? S.profile.photo || r.avatar : r.avatar, lvl = me ? compute().level : r.level;
+  return `<li class="${me ? "me" : ""}"><span class="rk num">${r.rank}</span>${avatarRing(photo, r.display_name || r.username, lvl, 38)}<span class="nm">${esc(r.display_name || r.username)}<span class="tiny mute">@${esc(r.username)}${opts && opts.tag && r.guild_name ? ` · <button class="gtag" data-act="ac-gpage" data-g="${r.guild_id}">${esc(r.guild_name)}</button>` : ""}</span></span><span class="sc num">${r.score}</span></li>`;
+}
+/* top 10, then the viewer's own line ("You: #37") when he is further down */
+function boardList(rows, opts){
+  const top = rows.filter(r => r.rank <= 10), me = rows.find(r => r.is_me && r.rank > 10);
+  if (!rows.length) return `<p class="mute sm">${(opts && opts.empty) || "No members yet."}</p>`;
+  return `<ol class="board">${top.map(r => boardRow(r, opts)).join("")}</ol>${me ? `<div class="board-you"><span class="tiny mute">You</span><ol class="board">${boardRow(me, opts)}</ol></div>` : ""}`;
+}
+function boardCard(){
+  const cat = UI.gcat || "overall", per = UI.gper || "week", key = "me:" + cat + ":" + per, b = UI.g.board[key];
   let list;
   if (!b || b.loading) list = `<p class="mute sm"><span class="spin sm"></span> Loading leaderboard…</p>`;
   else if (b.err) list = `<p class="sm bad-t">${esc(b.err)}</p><button class="btn ghost sm" data-act="ac-grefresh">Try again</button>`;
   else { const me = b.rows.find(r => r.is_me), prev = UI.g.prev[key], delta = me && prev ? prev - me.rank : 0;
     list = `${me ? `<div class="me-pos"><span class="num big">#${me.rank}</span><div><b>Your position</b><div class="tiny mute">of ${plural(me.member_count, "member")}${prev ? (delta > 0 ? `, up ${delta} since your last visit` : delta < 0 ? `, down ${-delta} since your last visit` : ", same as your last visit") : ""}</div></div></div>` : ""}
-      ${b.rows.length ? `<ol class="board">${b.rows.slice(0, 100).map(r => `<li class="${r.is_me ? "me" : ""}"><span class="rk num">${r.rank}</span>${avatarRing(r.is_me ? S.profile.photo || r.avatar : r.avatar, r.display_name || r.username, r.is_me ? compute().level : r.level, 38)}<span class="nm">${esc(r.display_name || r.username)}<span class="tiny mute">@${esc(r.username)}</span></span><span class="sc num">${r.score}</span></li>`).join("")}</ol>` : `<p class="mute sm">No members yet.</p>`}
+      <div class="tiny mute board-h">Top 10</div>${boardList(b.rows)}
       <p class="tiny mute">Live from the server, ${new Date(b.at).toLocaleTimeString("en-IN", {hour: "2-digit", minute: "2-digit"})}. Scores update when members sync.</p>`; }
   return `${segs(CATS, cat, "gcat")}${segs(PERIODS, per, "gper")}<section class="card">${list}</section>`;
 }
+function globalCard(){
+  const a = acct(), m = a && a.membership, cat = UI.gcat || "overall", per = UI.gper || "week", key = cat + ":" + per, b = UI.g.glob[key];
+  const inGuild = m && m.status === "approved";
+  let list;
+  if (!b || b.loading) list = `<p class="mute sm"><span class="spin sm"></span> Loading the global ranking…</p>`;
+  else if (b.err) list = `<p class="sm bad-t">${esc(b.err)}</p><button class="btn ghost sm" data-act="ac-grefresh">Try again</button>`;
+  else { const me = b.rows.find(r => r.is_me);
+    list = `${me ? `<div class="me-pos"><span class="num big">#${me.rank}</span><div><b>Your global position</b><div class="tiny mute">of ${plural(me.total, "athlete")} from every gym</div></div></div>` : ""}
+      <div class="tiny mute board-h">Top 10 across all gyms</div>${boardList(b.rows, {tag: true, empty: "Nobody has joined the global ranking yet. Be the first."})}
+      <p class="tiny mute">Tap a gym to see its page. Only members who chose the global ranking appear here.</p>`; }
+  const note = !inGuild ? `<section class="card notice"><h3>Represent your gym</h3><p class="sm">Join your gym's guild to compete in the global ranking. Your gym's name appears next to yours.</p></section>`
+    : m.global ? "" : `<section class="card notice"><h3>You are hidden from the global ranking</h3><p class="sm">Only your own guild sees your scores. Turn it on to appear here, with ${esc(m.guild_name)} next to your name.</p><button class="btn sm" data-act="ac-global-on">Show me globally</button></section>`;
+  return `${note}${segs(CATS, cat, "gcat")}${segs([["week", "Weekly"], ["month", "Monthly"]], per === "all" ? "week" : per, "gper")}<section class="card">${list}</section>`;
+}
+function globalChoice(m){
+  if (!m || m.status !== "approved" || m.global !== null && m.global !== undefined) return "";
+  return `<section class="card choice"><h3>Join the global ranking?</h3><p class="sm">Members of every gym can then see your name, username, photo, rank and scores, with ${esc(m.guild_name)} next to your name. Your workouts, weight and photos stay private either way. You can change this any time.</p>
+    <div class="grid2"><button class="btn" data-act="ac-global-on">Show me globally</button><button class="btn ghost" data-act="ac-global-off">Keep me in my guild</button></div></section>`;
+}
+function globalLine(m){
+  if (!m || m.status !== "approved" || m.global === null || m.global === undefined) return "";
+  return `<section class="card"><div class="line"><div><b>Global ranking</b><div class="tiny mute">${m.global ? "You appear on the global board with your gym." : "Hidden. Only your guild sees your scores."}</div></div>
+    <button class="btn sm ghost" data-act="${m.global ? "ac-global-off" : "ac-global-on"}">${m.global ? "Hide me" : "Show me"}</button></div></section>`;
+}
+function leaveButton(m){
+  if (m.lock_until && new Date(m.lock_until) > new Date()) return `<p class="tiny mute center">Guild members stay at least 30 days. You can leave from ${fmtDate(m.lock_until)}.</p>`;
+  return `<button class="btn danger quiet" data-act="ac-leave">Leave guild</button>`;
+}
+function viewMember(C, m, head, sync){
+  if (!m) return `<section class="card"><h3>Join your gym's guild</h3><p class="sm mute">Get the 6-letter join code from your gym. The guild master approves your request. Your guild sees your name, username, photo and four scores, never your logs or weight. Once approved you stay at least 30 days.</p>
+      <label class="lab" for="gcode">Gym join code</label><input id="gcode" class="input" autocapitalize="characters" maxlength="6" placeholder="ABC123">
+      <button class="btn" data-act="ac-join">Send join request</button><p class="err" id="gerr" role="alert"></p></section>` + localScores(C);
+  if (m.status === "pending") return `<section class="card gid">${logoHTML(m.logo_url, m.guild_name)}<div class="grow"><h3>${esc(m.guild_name)}</h3><div class="tiny mute">Request sent. The guild master needs to approve you.</div></div></section>
+      <button class="btn quiet" data-act="ac-cancel-join">Cancel request</button>` + localScores(C);
+  const hist = UI.g.hist;
+  return `<section class="card gid">${logoHTML(m.logo_url, m.guild_name)}<div class="grow"><h3>${esc(m.guild_name)}</h3><div class="tiny mute">${esc(m.city || "")}</div></div></section>
+    ${globalChoice(m)}
+    ${m.active ? boardCard() : `<section class="card notice"><h3>Guild inactive</h3><p class="sm">This gym's Ascendant subscription has expired, so its leaderboard is paused. Your own training is not affected.</p></section>`}
+    ${globalLine(m)}
+    <section class="card"><div class="row between"><h3>Competition history</h3><button class="btn sm ghost" data-act="ac-ghist">${hist ? "Refresh" : "Load"}</button></div>
+      ${hist ? (hist.err ? `<p class="sm bad-t">${esc(hist.err)}</p>` : hist.rows.length ? hist.rows.slice(0, 16).map(r => `<div class="line"><span>${r.period === "week" ? "Week of " + esc(r.period_key) : esc(r.period_key)}, ${esc(r.category)}</span><b class="num">#${r.rank} of ${r.member_count}</b></div>`).join("") : `<p class="mute sm">Finished weeks and months appear here.</p>`) : `<p class="mute sm">Your final positions in past weeks and months.</p>`}</section>
+    ${localScores(C)}${leaveButton(m)}`;
+}
 function viewGuild(C){
-  const head = right => `<div class="page-h"><h1>${role() === "owner" ? "Admin" : "Guild"}</h1>${right || ""}</div>`;
+  const head = right => `<div class="page-h"><h1>Guild</h1>${right || ""}</div>`;
   if (!CLOUD_ON) return head() + `<section class="card notice"><h3>Offline build</h3><p class="sm">This copy of the app is not connected to the Ascendant server, so there are no accounts, guilds or live rankings here, and the app will not invent any.</p></section>` + localScores(C);
   if (S.demo) return head() + `<section class="card notice"><h3>Demo data cannot join a guild</h3><p class="sm">Guild rankings only accept real training. Create an account to join your gym.</p><button class="btn" data-act="reset">Leave demo</button></section>` + localScores(C);
   const a = acct();
   if (!a) return head() + `<section class="card"><p class="mute sm"><span class="spin sm"></span> Connecting to your account…</p>${Sync.lastError ? `<p class="sm bad-t">${esc(Sync.lastError)}</p><button class="btn ghost sm" data-act="ac-grefresh">Try again</button>` : ""}</section>`;
   const sync = `<button class="btn sm ghost" data-act="ac-grefresh">Refresh</button>`;
-  if (a.role === "owner") return head(sync) + viewAdmin(C);
-  const mg = a.master_guild, m = a.membership;
-  if (mg){
-    const t = UI.mtab || "board";
-    const top = `<section class="card gid">${logoHTML(mg.logo_url, mg.name)}<div class="grow"><h3>${esc(mg.name)}</h3><div class="tiny mute">${esc(mg.city || "")}${mg.city ? ", " : ""}${plural(mg.members, "member")}. You are the Guild Master.</div></div></section>
+  const owner = a.role === "owner", mg = a.master_guild, m = a.membership;
+  const tabs = owner ? [["admin", "Admin"], ["mine", "My guild"], ["global", "Global"]] : [["mine", m || mg ? "My guild" : "Join"], ["global", "Global"]];
+  const t = UI.gtop && tabs.some(x => x[0] === UI.gtop) ? UI.gtop : tabs[0][0];
+  const top = head(sync) + segs(tabs, t, "ac-gtop");
+  if (t === "admin") return top + viewAdmin(C);
+  if (t === "global") return top + globalCard();
+  if (mg && !owner){
+    const mt = UI.mtab || "board";
+    const card = `<section class="card gid">${logoHTML(mg.logo_url, mg.name)}<div class="grow"><h3>${esc(mg.name)}</h3><div class="tiny mute">${esc(mg.city || "")}${mg.city ? ", " : ""}${plural(mg.members, "member")}. You are the Guild Master.</div></div></section>
       ${mg.active ? "" : `<section class="card notice"><h3>Subscription expired</h3><p class="sm">Your guild's leaderboards are locked for members and new members cannot join. Contact Ascendant to renew.</p></section>`}
-      ${segs([["board", "Leaderboard"], ["manage", `Manage${mg.pending ? ` (${mg.pending})` : ""}`]], t, "ac-mtab")}`;
-    return head(sync) + top + (t === "manage" ? viewManage(mg) : boardCard());
+      ${segs([["board", "Leaderboard"], ["manage", `Manage${mg.pending ? ` (${mg.pending})` : ""}`]], mt, "ac-mtab")}`;
+    return top + card + (mt === "manage" ? viewManage(mg) : globalChoice(m) + boardCard() + globalLine(m));
   }
-  if (!m) return head(sync) + `<section class="card"><h3>Join your gym's guild</h3><p class="sm mute">Get the 6-letter join code from your gym. The guild master approves your request. Only your name, username and four scores are visible to the guild, never your logs, photos or weight.</p>
-      <label class="lab" for="gcode">Gym join code</label><input id="gcode" class="input" autocapitalize="characters" maxlength="6" placeholder="ABC123">
-      <button class="btn" data-act="ac-join">Send join request</button><p class="err" id="gerr" role="alert"></p></section>` + localScores(C);
-  if (m.status === "pending") return head(sync) + `<section class="card gid">${logoHTML(m.logo_url, m.guild_name)}<div class="grow"><h3>${esc(m.guild_name)}</h3><div class="tiny mute">Request sent. The guild master needs to approve you.</div></div></section>
-      <button class="btn quiet" data-act="ac-cancel-join">Cancel request</button>` + localScores(C);
-  const hist = UI.g.hist;
-  return head(sync) + `<section class="card gid">${logoHTML(m.logo_url, m.guild_name)}<div class="grow"><h3>${esc(m.guild_name)}</h3><div class="tiny mute">${esc(m.city || "")}</div></div></section>
-    ${m.active ? boardCard() : `<section class="card notice"><h3>Guild inactive</h3><p class="sm">This gym's Ascendant subscription has expired, so its leaderboard is paused. Your own training is not affected.</p></section>`}
-    <section class="card"><div class="row between"><h3>Competition history</h3><button class="btn sm ghost" data-act="ac-ghist">${hist ? "Refresh" : "Load"}</button></div>
-      ${hist ? (hist.err ? `<p class="sm bad-t">${esc(hist.err)}</p>` : hist.rows.length ? hist.rows.slice(0, 16).map(r => `<div class="line"><span>${r.period === "week" ? "Week of " + esc(r.period_key) : esc(r.period_key)}, ${esc(r.category)}</span><b class="num">#${r.rank} of ${r.member_count}</b></div>`).join("") : `<p class="mute sm">Finished weeks and months appear here.</p>`) : `<p class="mute sm">Your final positions in past weeks and months.</p>`}</section>
-    ${localScores(C)}<button class="btn danger quiet" data-act="ac-leave">Leave guild</button>`;
+  return top + viewMember(C, m, head, sync);
 }
 function viewManage(mg){
   const reqs = UI.g.reqs, mem = UI.g.members;
@@ -158,7 +205,7 @@ function viewManage(mg){
       <button class="btn ghost" data-act="ac-gsave">Save gym profile</button></section>
     <section class="card"><h3>Join code</h3><p class="sm mute">Give this code to your members. They enter it in the app, and you approve them below.</p>
       <div class="code-big num">${esc(mg.join_code)}</div>
-      <div class="grid2"><button class="btn ghost sm" data-act="ac-copy" data-v="${esc(mg.join_code)}">Copy code</button><button class="btn quiet sm" data-act="ac-regen">New code</button></div></section>
+      <div class="grid3"><button class="btn ghost sm" data-act="ac-copy" data-v="${esc(mg.join_code)}">Copy code</button><button class="btn ghost sm" data-act="ac-poster-m">Poster</button><button class="btn quiet sm" data-act="ac-regen">New code</button></div></section>
     <section class="card"><h3>Join requests${reqs && reqs.length ? ` (${reqs.length})` : ""}</h3>
       ${!reqs ? `<p class="mute sm"><span class="spin sm"></span> Loading…</p>` : reqs.length ? reqs.map(r => `<div class="line"><div class="row">${avatarRing(r.avatar, r.display_name || r.username, r.level, 36)}<div><b>${esc(r.display_name || r.username)}</b><div class="tiny mute">@${esc(r.username)}, asked ${fmtDate(r.requested_at)}</div></div></div>
         <div class="row gap"><button class="btn sm quiet" data-act="ac-reject" data-u="${r.user_id}">Reject</button><button class="btn sm" data-act="ac-approve" data-u="${r.user_id}">Approve</button></div></div>`).join("") : `<p class="mute sm">No pending requests.</p>`}</section>
@@ -173,8 +220,13 @@ function viewAdmin(C){
   const t = UI.atab || "overview", A = UI.g.admin || {};
   let body = "";
   if (t === "overview"){ const s = A.stats;
-    body = `<section class="card">${s ? `<div class="cmp"><div><b class="num">${s.users}</b><span>Users</span></div><div><b class="num">${s.active_7d}</b><span>Active 7 days</span></div>
-        <div><b class="num">${s.active_guilds}/${s.guilds}</b><span>Active guilds</span></div></div>` : `<p class="mute sm"><span class="spin sm"></span> Loading…</p>`}</section>
+    const mx = s && s.weekly ? Math.max(1, ...s.weekly.map(w => w.n)) : 1;
+    body = `<section class="card"><h3>Users</h3>${s ? `<div class="cmp"><div><b class="num">${s.users}</b><span>Signed up</span></div><div><b class="num">${s.active_30d ?? "–"}</b><span>Active this month</span></div><div><b class="num">${s.active_7d}</b><span>Active this week</span></div></div>
+        <div class="cmp"><div><b class="num">${s.signups_7d ?? "–"}</b><span>New this week</span></div><div><b class="num">${s.signups_30d ?? "–"}</b><span>New this month</span></div><div><b class="num">${s.members ?? "–"}</b><span>In a guild</span></div></div>
+        <div class="cmp"><div><b class="num">${s.global_on ?? "–"}</b><span>On global board</span></div><div><b class="num">${s.active_guilds}/${s.guilds}</b><span>Active guilds</span></div><div><b class="num">${A.downloads ?? "–"}</b><span>APK downloads</span></div></div>
+        ${s.weekly ? `<div class="sub-h">New sign-ups per week</div><div class="wkbars">${s.weekly.map(w => `<div><i style="height:${Math.round(w.n / mx * 100)}%"></i><b class="num">${w.n}</b><span>${short(w.week)}</span></div>`).join("")}</div>` : ""}
+        <p class="tiny mute">"Active" means the app was opened while signed in. Only signed-up users are counted.</p>
+        <button class="btn ghost" data-act="ac-csv">Download users (CSV)</button>` : `<p class="mute sm"><span class="spin sm"></span> Loading…</p>`}</section>
       <section class="card"><h3>Create guild master codes</h3><p class="sm mute">Give one code to each gym after they pay. The gym owner registers with it and sets up the guild himself.</p>
         <div class="grid2"><div><label class="lab" for="cc-n">How many</label><input id="cc-n" class="input" inputmode="numeric" value="1"></div>
         <div><label class="lab" for="cc-days">Free days included</label><input id="cc-days" class="input" inputmode="numeric" value="30"></div></div>
@@ -187,6 +239,7 @@ function viewAdmin(C){
   if (t === "guilds") body = !A.guilds ? `<p class="mute sm"><span class="spin sm"></span> Loading…</p>` : A.guilds.length ? A.guilds.map(g => `<section class="card"><div class="row gap">${logoHTML(g.logo_url, g.name, 44)}<div class="grow"><h3>${esc(g.name)}</h3>
       <div class="tiny mute">${esc(g.city || "")}, master @${esc(g.master_username || "none")}, ${plural(g.members, "member")}${g.pending ? `, ${g.pending} pending` : ""}</div></div>
       <span class="pill ${g.active ? "good" : "bad"}">${g.active ? "Active" : g.status === "suspended" ? "Suspended" : "Expired"}</span></div>
+      <div class="line"><div><span class="sm">Member join code</span><div class="code-mid num">${esc(g.join_code || "")}</div></div><div class="row gap"><button class="btn sm ghost" data-act="ac-copy" data-v="${esc(g.join_code || "")}">Copy</button><button class="btn sm quiet" data-act="ac-oregen" data-g="${g.id}" data-n="${esc(g.name)}">New code</button><button class="btn sm quiet" data-act="ac-poster" data-g="${g.id}">Poster</button></div></div>
       <div class="line"><span class="sm">Paid until</span><input type="date" class="timeinput" data-gdate="${g.id}" value="${g.paid_until || ""}" aria-label="Paid until"></div>
       <div class="row gap"><button class="btn sm ghost" data-act="ac-gextend" data-g="${g.id}" data-d="30">+30 days</button><button class="btn sm ghost" data-act="ac-gextend" data-g="${g.id}" data-d="365">+1 year</button>
       <button class="btn sm quiet" data-act="ac-gstatus" data-g="${g.id}" data-v="${g.status === "suspended" ? "active" : "suspended"}">${g.status === "suspended" ? "Reactivate" : "Suspend"}</button>
@@ -198,32 +251,45 @@ function viewAdmin(C){
   if (t === "users") body = `<section class="card"><div class="row gap"><input id="us-q" class="input grow" placeholder="Search username or name" value="${esc(A.q || "")}"><button class="btn sm" data-act="ac-usearch">Search</button></div></section>
     ${!A.users ? "" : `<section class="card">${A.users.length ? A.users.map(u => `<div class="line"><div class="row">${avatarRing(u.avatar, u.display_name || u.username, u.level, 36)}<div><b>${esc(u.display_name || u.username)}</b> <span class="pill">${ROLE_NAME[u.role]}</span>
       <div class="tiny mute">@${esc(u.username)}${u.guild_name ? `, ${esc(u.guild_name)} (${esc(u.membership)})` : ""}, joined ${fmtDate(u.created_at)}, last active ${fmtDate(u.last_seen)}</div></div>
-      </div><div class="row gap wrap">${u.avatar ? `<button class="btn sm quiet" data-act="ac-oclearav" data-u="${u.id}">Remove photo</button>` : ""}<button class="btn sm quiet" data-act="ac-resetpw" data-u="${u.id}" data-n="${esc(u.username)}">Reset password</button>${u.role === "owner" ? "" : `<button class="btn sm danger" data-act="ac-deluser" data-u="${u.id}" data-n="${esc(u.username)}">Delete</button>`}</div></div>`).join("") : `<p class="mute sm">No users found.</p>`}</section>`}`;
+      </div><div class="row gap wrap">${u.avatar ? `<button class="btn sm quiet" data-act="ac-oclearav" data-u="${u.id}">Remove photo</button>` : ""}${u.guild_name && u.role === "participant" ? `<button class="btn sm quiet" data-act="ac-release" data-u="${u.id}" data-n="${esc(u.username)}" data-g="${esc(u.guild_name)}">Release from guild</button>` : ""}<button class="btn sm quiet" data-act="ac-resetpw" data-u="${u.id}" data-n="${esc(u.username)}">Reset password</button>${u.role === "owner" ? "" : `<button class="btn sm danger" data-act="ac-deluser" data-u="${u.id}" data-n="${esc(u.username)}">Delete</button>`}</div></div>`).join("") : `<p class="mute sm">No users found.</p>`}</section>`}`;
   return segs([["overview", "Overview"], ["guilds", "Guilds"], ["codes", "Codes"], ["users", "Users"]], t, "ac-atab") + body;
 }
 
 /* ---------------- loaders ---------------- */
 let guildLoading = false;
+async function scoreFirst(){ if (!UI.g.scored){ UI.g.scored = true; await Sync.run(); try { await Cloud.fn("compute-scores"); } catch(e){} } }
 async function guildLoad(force){
   if (!CLOUD_ON || !Cloud.session || !S || S.demo || guildLoading) return;
   guildLoading = true; let changed = false;
   try {
     if (!acct() || force || Date.now() - (acct().at || 0) > 20e3){ await refreshAccount(); changed = true; }
-    const a = acct();
-    if (a.role === "owner"){
-      const A = UI.g.admin = UI.g.admin || {}, t = UI.atab || "overview";
-      if (t === "overview" && (!A.stats || force)){ A.stats = await Cloud.rpc("owner_stats"); A.log = await Cloud.rpc("owner_log_recent"); changed = true; }
-      if (t === "guilds" && (!A.guilds || force)){ A.guilds = await Cloud.rpc("owner_guilds"); changed = true; }
-      if (t === "codes" && (!A.codes || force)){ A.codes = await Cloud.rpc("owner_codes"); changed = true; }
-      if (t === "users" && (!A.users || force)){ A.users = await Cloud.rpc("owner_users", {p_search: A.q || ""}); changed = true; }
-    } else if (a.master_guild && (UI.mtab || "board") === "manage"){
+    const a = acct(), owner = a.role === "owner", m = a.membership, mg = a.master_guild;
+    const t = UI.gtop || (owner ? "admin" : "mine");
+    UI.g.glob = UI.g.glob || {};
+    if (owner && t === "admin"){
+      const A = UI.g.admin = UI.g.admin || {}, at = UI.atab || "overview";
+      if (at === "overview" && (!A.stats || force)){ A.stats = await Cloud.rpc("owner_stats"); A.log = await Cloud.rpc("owner_log_recent"); changed = true;
+        if (A.downloads === undefined) apkDownloads().then(n => { A.downloads = n; if (UI.tab === "guild") render(); }); }
+      if (at === "guilds" && (!A.guilds || force)){ A.guilds = await Cloud.rpc("owner_guilds"); changed = true; }
+      if (at === "codes" && (!A.codes || force)){ A.codes = await Cloud.rpc("owner_codes"); changed = true; }
+      if (at === "users" && (!A.users || force)){ A.users = await Cloud.rpc("owner_users", {p_search: A.q || ""}); changed = true; }
+    } else if (t === "global"){
+      const cat = UI.gcat || "overall", per = UI.gper === "month" ? "month" : "week", key = cat + ":" + per;
+      if (!UI.g.glob[key] || force){
+        UI.g.glob[key] = {loading: true};
+        if (m && m.status === "approved") await scoreFirst();
+        try { UI.g.glob[key] = {rows: await Cloud.rpc("global_leaderboard", {p_category: cat, p_period: per}), at: Date.now()}; }
+        catch(e){ UI.g.glob[key] = {err: e.message}; }
+        changed = true;
+      }
+    } else if (mg && !owner && (UI.mtab || "board") === "manage"){
       if (!UI.g.reqs || force){ UI.g.reqs = await Cloud.rpc("master_requests"); changed = true; }
       if (!UI.g.members || force){ UI.g.members = await Cloud.rpc("master_members"); changed = true; }
-    } else if ((a.master_guild && a.master_guild.active) || (a.membership && a.membership.status === "approved" && a.membership.active)){
+    } else if ((mg && mg.active && !owner) || (m && m.status === "approved" && m.active)){
       const cat = UI.gcat || "overall", per = UI.gper || "week", key = "me:" + cat + ":" + per;
       if (!UI.g.board[key] || force){
         UI.g.board[key] = {loading: true};
-        if (!UI.g.scored){ UI.g.scored = true; await Sync.run(); try { await Cloud.fn("compute-scores"); } catch(e){} }
+        await scoreFirst();
         try {
           const rows = await Cloud.rpc("guild_leaderboard", {p_category: cat, p_period: per});
           UI.g.board[key] = {rows, at: Date.now()};
@@ -236,6 +302,23 @@ async function guildLoad(force){
   } catch(e){ Sync.lastError = e.message; changed = true; if (!acct()) toast(e.message); }
   finally { guildLoading = false; }
   if (changed && UI.tab === "guild" && !UI.auth) render();
+}
+/* APK downloads, all releases (GitHub's public count). Shown to the owner only. */
+async function apkDownloads(){
+  try { const r = await fetch("https://api.github.com/repos/Deepansh-Deep/ascendant/releases?per_page=100", {cache: "no-store"}); if (!r.ok) return null;
+    return (await r.json()).reduce((n, rel) => n + (rel.assets || []).filter(x => /\.apk$/.test(x.name)).reduce((a, x) => a + (x.download_count || 0), 0), 0); }
+  catch(e){ return null; }
+}
+async function exportUsersCSV(){
+  const rows = await Cloud.rpc("owner_export_users");
+  const head = ["username", "display_name", "role", "guild", "membership", "global_ranking", "level", "joined", "last_active"];
+  const cell = v => { const t = v === null || v === undefined ? "" : String(v); return /[",\n]/.test(t) ? `"${t.replace(/"/g, '""')}"` : t; };
+  const csv = "﻿" + [head.join(",")].concat(rows.map(r => [r.username, r.display_name, r.role, r.guild, r.membership, r.global === null ? "" : r.global ? "yes" : "no", r.level, r.joined, r.last_active].map(cell).join(","))).join("\n");
+  const name = `ascendant-users-${TODAY()}.csv`;
+  const b64 = btoa(unescape(encodeURIComponent(csv)));
+  if (await nativeShare(name, b64, "Ascendant users")) return rows.length;
+  const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([csv], {type: "text/csv"})); a.download = name; document.body.appendChild(a); a.click(); a.remove();
+  return rows.length;
 }
 
 /* ---------------- settings card + shop ---------------- */
@@ -302,7 +385,7 @@ document.addEventListener("click", async e => {
           <div class="grid2"><button class="btn ghost" data-act="close">Stay signed in</button><button class="btn danger" data-act="ac-signout-force">Sign out anyway</button></div>`); }
       } // falls through
       case "ac-signout-force": { const key = STORE_KEY; await Cloud.signOut(); try { localStorage.removeItem(key); } catch(err){}
-        S = null; STORE_KEY = KEY; UI.g = {board: {}, prev: {}}; UI.products = null; closeModal(); UI.auth = {step: "welcome"}; render(); scrollTo(0, 0); return; }
+        S = null; STORE_KEY = KEY; UI.g = {board: {}, prev: {}, glob: {}}; UI.products = null; closeModal(); UI.auth = {step: "welcome"}; render(); scrollTo(0, 0); return; }
       case "ac-syncnow": { await busy(() => Sync.run(), "Syncing…"); try { await refreshAccount(); } catch(err){} render(); toast(Sync.status === "ok" ? "Synced" : "Sync failed: " + (Sync.lastError || "")); return; }
       case "ac-chpw": modal(`<h2>Change password</h2><label class="lab" for="pw1">New password</label><input id="pw1" class="input" type="password" autocomplete="new-password">
         <label class="lab" for="pw2">Repeat new password</label><input id="pw2" class="input" type="password" autocomplete="new-password"><p class="err" id="pwerr"></p>
@@ -317,15 +400,34 @@ document.addEventListener("click", async e => {
       case "ac-cancel-join": await busy(() => Cloud.rpc("leave_guild")); await refreshAccount(); render(); toast("Request cancelled"); return;
       case "ac-leave": modal(`<h2>Leave guild?</h2><p class="mute">You disappear from this gym's leaderboard. Your training and history stay with you. To come back you need the guild master's approval again.</p>
         <div class="grid2"><button class="btn ghost" data-act="close">Cancel</button><button class="btn danger" data-act="ac-leave-yes">Leave guild</button></div>`); return;
-      case "ac-leave-yes": await Cloud.rpc("leave_guild"); await refreshAccount(); UI.g = {board: {}, prev: {}}; closeModal(); render(); toast("You left the guild"); return;
+      case "ac-leave-yes": await Cloud.rpc("leave_guild"); await refreshAccount(); UI.g = {board: {}, prev: {}, glob: {}}; closeModal(); render(); toast("You left the guild"); return;
       case "ac-ghist": { try { const rows = await busy(() => Cloud.rpc("my_competition_history"), "Loading…"); UI.g.hist = {rows};
           const best = rows.filter(r => r.category === "overall").reduce((mn, r) => Math.min(mn, r.rank), 999); if (best < 999){ S.guildBest = Math.min(S.guildBest || 999, best); save(); } }
         catch(err){ UI.g.hist = {err: err.message}; } render(); return; }
-      case "ac-grefresh": UI.g.board = {}; UI.g.reqs = null; UI.g.members = null; if (UI.g.admin) UI.g.admin = {q: UI.g.admin.q}; render(); return guildLoad(true);
+      case "ac-grefresh": UI.g.board = {}; UI.g.glob = {}; UI.g.reqs = null; UI.g.members = null; if (UI.g.admin) UI.g.admin = {q: UI.g.admin.q}; render(); return guildLoad(true);
+      case "ac-gtop": UI.gtop = v; render(); return guildLoad();
+      case "ac-global-on": case "ac-global-off": { const on = a === "ac-global-on";
+        await busy(() => Cloud.rpc("set_global", {p_on: on}), "Saving…"); await refreshAccount(); UI.g.glob = {}; render(); guildLoad();
+        toast(on ? "You are on the global ranking" : "Hidden from the global ranking. Only your guild sees you."); return; }
+      case "ac-gpage": { const cat = UI.gcat || "overall", per = UI.gper === "month" ? "month" : "week";
+        modal(`<h2>Gym</h2><p class="mute sm"><span class="spin sm"></span> Loading…</p>`);
+        try { const g = await Cloud.rpc("guild_page", {p_guild: b.dataset.g, p_category: cat, p_period: per});
+          modal(`<div class="row gap">${logoHTML(g.logo_url, g.name, 56)}<div><h2>${esc(g.name)}</h2><div class="tiny mute">${esc(g.city || "")}${g.city ? ", " : ""}${plural(g.members, "member")}, ${g.shown} on the global ranking</div></div></div>
+            <div class="tiny mute board-h">Top 10, ${CATS.find(c => c[0] === cat)[1].toLowerCase()}, ${per === "week" ? "this week" : "this month"}</div>
+            ${g.rows.length ? `<ol class="board">${g.rows.map(r => boardRow(r)).join("")}</ol>` : `<p class="mute sm">No members on the global ranking yet.</p>`}<button class="btn" data-act="close">Close</button>`); }
+        catch(err){ modal(`<h2>Gym</h2><p class="bad-t sm">${esc(err.message)}</p><button class="btn" data-act="close">Close</button>`); } return; }
+      case "ac-csv": { const n = await busy(() => exportUsersCSV(), "Preparing…"); toast(`${n} users exported`); return; }
+      case "ac-oregen": modal(`<h2>New join code for ${esc(b.dataset.n)}?</h2><p class="mute">The old code stops working at once, including on printed posters. Existing members stay in the guild.</p>
+        <div class="grid2"><button class="btn ghost" data-act="close">Cancel</button><button class="btn" data-act="ac-oregen-yes" data-g="${esc(b.dataset.g)}">New code</button></div>`); return;
+      case "ac-oregen-yes": { const c = await busy(() => Cloud.rpc("owner_regen_join_code", {p_guild: b.dataset.g})); UI.g.admin.guilds = null; closeModal(); render(); guildLoad(); toast("New join code " + c); return; }
+      case "ac-poster": { const g = UI.g.admin.guilds.find(x => x.id === b.dataset.g); if (g) posterSheet(g); return; }
+      case "ac-release": modal(`<h2>Release @${esc(b.dataset.n)}?</h2><p class="mute">They leave ${esc(b.dataset.g)} now, even inside the 30-day stay. Their training is not touched.</p>
+        <div class="grid2"><button class="btn ghost" data-act="close">Cancel</button><button class="btn danger" data-act="ac-release-yes" data-u="${esc(b.dataset.u)}">Release</button></div>`); return;
+      case "ac-release-yes": await busy(() => Cloud.rpc("owner_release_member", {p_user: b.dataset.u})); closeModal(); UI.g.admin.users = null; render(); guildLoad(); toast("Released from the guild"); return;
       // ---- guild master
       case "ac-mtab": UI.mtab = v; render(); return;
       case "ac-approve": case "ac-reject": await busy(() => Cloud.rpc("master_decide", {p_user: b.dataset.u, p_approve: a === "ac-approve"}));
-        UI.g.reqs = null; UI.g.members = null; UI.g.board = {}; await refreshAccount(); render(); guildLoad(); toast(a === "ac-approve" ? "Member approved" : "Request rejected"); return;
+        UI.g.reqs = null; UI.g.members = null; UI.g.board = {}; UI.g.glob = {}; await refreshAccount(); render(); guildLoad(); toast(a === "ac-approve" ? "Member approved" : "Request rejected"); return;
       case "ac-remove": modal(`<h2>Remove @${esc(b.dataset.n)}?</h2><p class="mute">They leave your guild's leaderboard. Their own training is not deleted.</p>
         <div class="grid2"><button class="btn ghost" data-act="close">Cancel</button><button class="btn danger" data-act="ac-remove-yes" data-u="${esc(b.dataset.u)}">Remove</button></div>`); return;
       case "ac-remove-yes": await Cloud.rpc("master_remove", {p_user: b.dataset.u}); UI.g.members = null; UI.g.board = {}; await refreshAccount(); closeModal(); render(); guildLoad(); toast("Member removed"); return;
@@ -404,4 +506,58 @@ $("#logoFile").addEventListener("change", e => {
     toast("Uploading logo…");
     try { await Cloud.fn("upload-logo", {image: url}); await refreshAccount(); render(); toast("Logo updated"); } catch(err){ toast("Logo upload failed: " + err.message); }
   });
+});
+
+/* ---------------- gym poster: QR to the join page, with the member join code ---------------- */
+const SITE_URL = (CFG.updateUrl || "https://deepansh-deep.github.io/ascendant/version.json").replace(/version\.json.*$/, "");
+const joinURL = g => `${SITE_URL}join.html?c=${encodeURIComponent(g.join_code)}&g=${encodeURIComponent(g.name)}`;
+async function drawPoster(g){
+  try { await Promise.all(["800 80px SoraLocal", "600 40px InterLocal", "700 40px BarlowLocal"].map(f => document.fonts.load(f))); } catch(e){}
+  const W = 1240, H = 1754, cv = document.createElement("canvas"); cv.width = W; cv.height = H;
+  const x = cv.getContext("2d"), GOLD = "#D4A84F", INK = "#0E0F12";
+  const bg = x.createLinearGradient(0, 0, 0, H); bg.addColorStop(0, "#15171C"); bg.addColorStop(1, INK); x.fillStyle = bg; x.fillRect(0, 0, W, H);
+  const glow = x.createRadialGradient(W / 2, 760, 60, W / 2, 760, 700); glow.addColorStop(0, "rgba(212,168,79,.22)"); glow.addColorStop(1, "rgba(212,168,79,0)"); x.fillStyle = glow; x.fillRect(0, 0, W, H);
+  // hunter art, faded, behind everything
+  await new Promise(res => { const im = new Image(); im.onload = () => { const h = 1150, w = im.width * h / im.height; x.globalAlpha = .16; x.drawImage(im, W - w + 120, H - h - 40, w, h); x.globalAlpha = 1; res(); }; im.onerror = res; im.src = heroImg("male", "signature"); });
+  x.strokeStyle = GOLD; x.lineWidth = 6; x.strokeRect(36, 36, W - 72, H - 72);
+  const center = (t, y, font, color) => { x.font = font; x.fillStyle = color; x.textAlign = "center"; x.fillText(t, W / 2, y); };
+  const fit = (t, max, size, weight, fam) => { let s = size; do { x.font = `${weight} ${s}px ${fam}`; s -= 2; } while (x.measureText(t).width > max && s > 20); return x.font; };
+  center("ASCENDANT", 150, "700 64px BarlowLocal, sans-serif", GOLD);
+  center("TRAIN AT", 255, "600 40px InterLocal, sans-serif", "#9AA0AA");
+  center(g.name.toUpperCase(), 345, fit(g.name.toUpperCase(), W - 160, 92, 800, "SoraLocal, sans-serif"), "#FFFFFF");
+  center("Join the gym leaderboard. Rank up. Grow your aura.", 410, "500 34px InterLocal, sans-serif", "#C9CDD4");
+  // QR
+  const qr = qrcode(0, "M"); qr.addData(joinURL(g)); qr.make();
+  const n = qr.getModuleCount(), box = 540, cell = Math.floor(box / (n + 8)), size = cell * (n + 8), qx = (W - size) / 2, qy = 450;
+  x.fillStyle = "#FFFFFF"; x.beginPath(); x.roundRect ? x.roundRect(qx, qy, size, size, 28) : x.rect(qx, qy, size, size); x.fill();
+  x.fillStyle = INK; for (let r = 0; r < n; r++) for (let c = 0; c < n; c++) if (qr.isDark(r, c)) x.fillRect(qx + (c + 4) * cell, qy + (r + 4) * cell, cell, cell);
+  center("SCAN TO DOWNLOAD AND JOIN", qy + size + 64, "700 44px BarlowLocal, sans-serif", GOLD);
+  // join code
+  const cy = qy + size + 100; x.fillStyle = "rgba(212,168,79,.12)"; x.strokeStyle = GOLD; x.lineWidth = 3;
+  x.beginPath(); x.roundRect ? x.roundRect(200, cy, W - 400, 190, 24) : x.rect(200, cy, W - 400, 190); x.fill(); x.stroke();
+  center("GYM JOIN CODE", cy + 56, "600 30px InterLocal, sans-serif", "#C9CDD4");
+  center(g.join_code.split("").join(" "), cy + 150, "800 92px SoraLocal, sans-serif", "#FFFFFF");
+  const steps = ["Scan the code and download Ascendant", "Create your free account", "Tap Join a guild and enter the code", `${g.name} approves you. Start climbing.`];
+  x.textAlign = "left"; let sy = cy + 262;
+  steps.forEach((t, i) => { x.fillStyle = GOLD; x.beginPath(); x.arc(250, sy - 12, 26, 0, 7); x.fill(); x.fillStyle = INK; x.font = "800 30px SoraLocal, sans-serif"; x.textAlign = "center"; x.fillText(i + 1, 250, sy - 1);
+    x.textAlign = "left"; x.fillStyle = "#E6E8EC"; x.font = fit(t, W - 420, 36, 600, "InterLocal, sans-serif"); x.fillText(t, 300, sy); sy += 66; });
+  center("Free for members", H - 104, "600 32px InterLocal, sans-serif", GOLD);
+  center(SITE_URL.replace(/^https?:\/\//, "") + "download.html", H - 64, "500 26px InterLocal, sans-serif", "#7D838E");
+  return cv;
+}
+async function posterSheet(g){
+  modal(`<h2>Gym poster</h2><p class="mute sm"><span class="spin sm"></span> Drawing…</p>`);
+  try {
+    const cv = await drawPoster(g), url = cv.toDataURL("image/png"); UI.poster = {url, name: `ascendant-${g.name.toLowerCase().replace(/[^a-z0-9]+/g, "-")}-poster.png`};
+    modal(`<h2>${esc(g.name)} poster</h2><p class="sm mute">Print it A4 and put it near the entrance or the mirror. The QR opens a page with the download and the join code <b>${esc(g.join_code)}</b>. If you make a new join code, print a new poster.</p>
+      <img class="poster-img" src="${url}" alt="Poster for ${esc(g.name)} with QR code and join code ${esc(g.join_code)}">
+      <div class="grid2"><button class="btn ghost" data-act="close">Close</button><button class="btn" data-act="ac-poster-save">Save or share</button></div>`);
+  } catch(e){ modal(`<h2>Gym poster</h2><p class="bad-t sm">${esc(e.message)}</p><button class="btn" data-act="close">Close</button>`); }
+}
+document.addEventListener("click", async e => {
+  const b = e.target.closest("[data-act='ac-poster-save'],[data-act='ac-poster-m']"); if (!b) return;
+  if (b.dataset.act === "ac-poster-m"){ const mg = acct() && acct().master_guild; if (mg) posterSheet(mg); return; }
+  const p = UI.poster; if (!p) return;
+  if (await nativeShare(p.name, p.url.split(",")[1], "Ascendant gym poster")) return;
+  const a = document.createElement("a"); a.href = p.url; a.download = p.name; document.body.appendChild(a); a.click(); a.remove();
 });

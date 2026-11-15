@@ -182,7 +182,7 @@ function dayView(C, k){
         : TIMED.has(e.ex) ? f("reps", "Minutes", "min", "decimal", ph ? ph.reps : "0", true)
         : f("kg", "Kilograms", "kg", "decimal", ph ? (ph.kg || 0) : (BODYW.has(e.ex) ? "0" : "kg")) + f("reps", "Reps", "reps", "numeric", ph ? ph.reps : "0")}
         <button class="del" data-act="delset" data-e="${ei}" data-s="${si}" aria-label="Remove set ${si + 1}">${ICON.x}</button></div>`; }).join("");
-    return `<div class="ex"><div class="row between"><button class="ex-name" data-act="ex-hist" data-e="${esc(e.ex)}">${esc(e.ex)}<span class="tiny mute">History</span></button><button class="link mute" data-act="delex" data-e="${ei}">Remove</button></div>
+    return `<div class="ex"><div class="row between"><button class="ex-name" data-act="ex-hist" data-e="${esc(e.ex)}">${esc(e.ex)}<span class="tiny mute">${isCustom(e.ex) ? "Custom, not in guild score" : "History"}</span></button><button class="link mute" data-act="delex" data-e="${ei}">Remove</button></div>
       <div class="ex-ref"><span>${last ? `Last, ${short(last.k)}: <b>${last.sets.map(s => fmtSet(e.ex, s)).join(", ")}</b>` : "First time. Set your baseline."}</span>
       ${best ? `<span>Best: <b>${fmtSet(e.ex, best.set)}</b>${isWeighted(e.ex) ? `, est. 1RM ${metricFmt(e.ex, best.score)}` : ""}</span>` : ""}</div>
       <div class="sets">${rows}</div><div class="row between"><button class="addset" data-act="addset" data-e="${ei}">${ICON.plus}Add set</button>${last ? `<button class="addset" data-act="repeat" data-e="${ei}">Same as last time</button>` : ""}</div></div>`; }).join("");
@@ -341,7 +341,9 @@ function viewSettings(C){
   <section class="card">${DAYS.map((n, i) => `<div class="plan-day"><span class="dn">${n.slice(0, 3)}</span><div class="chips">${MUSCLES.map(m => `<button class="chip ${plan[i].includes(m) ? "on" : ""}" data-act="toggle-day" data-d="${i}" data-m="${m}">${m}</button>`).join("")}</div></div>`).join("")}</section>
   <p class="tiny mute">No muscle selected means rest. Changes apply from today. Past days keep their old plan.</p>
   ${secH("My exercises")}
-  ${MUSCLES.filter(m => plan.some(p => p.includes(m))).map(m => `<section class="card"><h3>${m}</h3><div class="chips">${optsFor(m).map(e => `<button class="chip ${(S.exercises[m] || []).includes(e) ? "on" : ""}" data-act="toggle-ex" data-m="${m}" data-e="${esc(e)}">${esc(e)}</button>`).join("")}</div></section>`).join("")}
+  ${MUSCLES.filter(m => plan.some(p => p.includes(m))).map(m => `<section class="card"><div class="row between"><h3>${m}</h3><div class="row gap"><button class="btn sm quiet" data-act="ex-all" data-m="${m}">Select all</button><button class="btn sm quiet" data-act="ex-none" data-m="${m}">Deselect all</button></div></div>
+    <div class="chips">${optsFor(m).map(e => `<button class="chip ${(S.exercises[m] || []).includes(e) ? "on" : ""} ${isCustom(e) ? "custom" : ""}" data-act="toggle-ex" data-m="${m}" data-e="${esc(e)}">${esc(e)}</button>`).join("")}<button class="chip add" data-act="custom-new" data-m="${m}">${ICON.plus}Add your own</button></div></section>`).join("")}
+  ${(S.custom || []).some(c => !c.hidden) ? `${secH("Your own exercises")}<section class="card"><p class="tiny mute">They count for your XP, history and records, but not for guild or global scores.</p>${S.custom.filter(c => !c.hidden).map(c => `<div class="line"><div><b>${esc(c.name)}</b><div class="tiny mute">${c.m}, ${(CUSTOM_TYPES.find(t => t[0] === c.t) || CUSTOM_TYPES[0])[1]}</div></div><button class="btn sm quiet" data-act="custom-del" data-e="${esc(c.name)}">Remove</button></div>`).join("")}</section>` : ""}
   ${secH("Training settings")}<section class="card">
     <div class="line"><div><b>Daily reminder</b><div class="tiny mute">${native ? "Notification at this time on training days." : "Works in the installed Android app."}</div></div>
       <div class="row gap"><input type="time" class="timeinput" data-set="time" value="${st.remind.time}" aria-label="Reminder time"><button class="switch ${st.remind.on ? "on" : ""}" data-act="remind" role="switch" aria-checked="${st.remind.on}" aria-label="Daily reminder"></button></div></div>
@@ -533,7 +535,16 @@ function checkLevelChange(before){ queueCeremonies(before, compute()); if (!$("#
 function curLog(){ return S.logs[logKey()]; }
 function addExercise(){
   const L = curLog(); const have = new Set((L && L.entries || []).map(e => e.ex));
-  modal(`<h2>Add exercise</h2>${MUSCLES.map(m => `<div class="sub-h">${m}</div><div class="chips">${optsFor(m).filter(e => !have.has(e)).map(e => `<button class="chip" data-act="pick-ex" data-e="${esc(e)}">${esc(e)}</button>`).join("")}</div>`).join("")}`);
+  modal(`<h2>Add exercise</h2><button class="btn ghost" data-act="custom-new" data-log="1">${ICON.plus}Not in the list? Add your own</button>${MUSCLES.map(m => `<div class="sub-h">${m}</div><div class="chips">${optsFor(m).filter(e => !have.has(e)).map(e => `<button class="chip ${isCustom(e) ? "custom" : ""}" data-act="pick-ex" data-e="${esc(e)}">${esc(e)}</button>`).join("")}</div>`).join("")}`);
+}
+function customModal(m, toLog){
+  UI.cx = {m: m || UI.cx && UI.cx.m || "Cardio", t: (UI.cx && UI.cx.t) || "reps", name: (UI.cx && UI.cx.name) || "", log: !!toLog};
+  const c = UI.cx;
+  modal(`<h2>Add your own exercise</h2><p class="sm mute">For anything missing from the list. It counts for your XP, history and records. It does not count for guild or global scores, so rankings stay fair.</p>
+    <label class="lab" for="cx-name">Name</label><input id="cx-name" class="input" maxlength="30" placeholder="e.g. Jump Rope Double Unders" value="${esc(c.name)}">
+    <div class="sub-h">Muscle group</div><div class="chips">${MUSCLES.map(x => `<button class="chip ${c.m === x ? "on" : ""}" data-act="cx-m" data-v="${x}">${x}</button>`).join("")}</div>
+    <div class="sub-h">How you measure it</div><div class="chips">${CUSTOM_TYPES.map(([k, n]) => `<button class="chip ${c.t === k ? "on" : ""}" data-act="cx-t" data-v="${k}">${n}</button>`).join("")}</div>
+    <p class="err" id="cx-err" role="alert"></p><div class="grid2"><button class="btn ghost" data-act="close">Cancel</button><button class="btn" data-act="cx-save">Add exercise</button></div>`);
 }
 function trainAnyway(){ modal(`<h2>What are you training?</h2><div class="chips">${MUSCLES.map(m => `<button class="chip" data-act="extra" data-m="${m}">${m}</button>`).join("")}</div>`); }
 function goDay(k){ const d = fromKey(k); UI.trainTab = "today"; UI.tab = "train"; UI.weekOff = Math.round((mondayOf(d) - mondayOf(todayD())) / (7 * 864e5)); UI.sel = wd(d); }
@@ -609,8 +620,18 @@ document.addEventListener("click", async e => {
       p[d] = p[d].includes(m) ? p[d].filter(x => x !== m) : [...p[d], m];
       const h = S.planHistory.find(h => h.from === t); if (h) h.plan = p; else S.planHistory.push({from:t, plan:p});
       if (!S.exercises[m] || !S.exercises[m].length) S.exercises[m] = optsFor(m).slice(0, 3); save(); render(); scheduleReminders(); return; }
+    case "ex-all": { const m = b.dataset.m; S.exercises[m] = optsFor(m).slice(); save(); render(); return; }
+    case "ex-none": { const m = b.dataset.m; S.exercises[m] = []; save(); render(); toast(`No ${m} exercises selected. Pick the ones you do, or add them during a workout.`); return; }
+    case "custom-new": UI.cx = null; customModal(b.dataset.m, !!b.dataset.log); return;
+    case "cx-m": case "cx-t": { const n = $("#cx-name"); UI.cx.name = n ? n.value : UI.cx.name; UI.cx[a === "cx-m" ? "m" : "t"] = v; customModal(UI.cx.m, UI.cx.log); return; }
+    case "cx-save": { const name = cleanCustomName($("#cx-name").value), err = customNameError(name); if (err) return void ($("#cx-err").textContent = err);
+      const c = addCustom(name, UI.cx.m, UI.cx.t); S.exercises[c.m] = S.exercises[c.m] || []; if (!S.exercises[c.m].includes(c.name)) S.exercises[c.m].push(c.name);
+      if (UI.cx.log){ const L = UI.editKey ? curLog() : ensureToday(musclesOn(TODAY())); L.entries.push({ex: c.name, sets: [{}, {}, {}]}); }
+      UI.cx = null; save(); closeModal(); render(); toast(`${c.name} added`); return; }
+    case "custom-del": { const c = (S.custom || []).find(x => x.name === b.dataset.e); if (!c) return;
+      c.hidden = true; for (const m in S.exercises) S.exercises[m] = (S.exercises[m] || []).filter(x => x !== c.name); save(); render(); toast(`${c.name} removed. Its past workouts stay in your history.`); return; }
     case "toggle-ex": { const m = b.dataset.m, ex = b.dataset.e, l = S.exercises[m] = S.exercises[m] || [];
-      if (l.includes(ex)){ if (l.length === 1) return toast("Keep at least one exercise"); S.exercises[m] = l.filter(x => x !== ex); } else l.push(ex); save(); render(); return; }
+      if (l.includes(ex)) S.exercises[m] = l.filter(x => x !== ex); else l.push(ex); save(); render(); return; }
     case "remind": S.settings.remind.on = !S.settings.remind.on; save(); render(); scheduleReminders(); if (!nativeLN()) toast("Reminders work in the installed Android app"); return;
     case "rest-len": S.settings.rest = +v; save(); render(); return;
     case "sound": S.settings.sound = !S.settings.sound; save(); render(); return;

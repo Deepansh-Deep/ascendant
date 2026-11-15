@@ -4,13 +4,13 @@
    Keep exercise categories in sync with core.js (test: supabase/test/run_tests.mjs checks this). */
 (function (root) {
   "use strict";
-  const TIMED = new Set(["Plank", "Treadmill", "Cycling", "Rowing", "Stair Climber", "Skipping"]);
-  const HOLD = new Set(["Dead Hang", "Handstand Hold", "Wall Sit", "Hollow Hold", "L-Sit"]);
-  const RUN = new Set(["Running"]);
+  const TIMED = new Set(["Plank", "Treadmill", "Cycling", "Rowing", "Stair Climber", "Skipping", "Battle Ropes", "Elliptical"]);
+  const HOLD = new Set(["Dead Hang", "Handstand Hold", "Wall Sit", "Hollow Hold", "L-Sit", "Side Plank"]);
+  const RUN = new Set(["Running", "Walking"]);
   const BODYW = new Set(["Push-ups", "Pull-ups", "Bench Dips", "Hanging Leg Raise", "Crunches", "Russian Twist", "Ab Wheel",
     "Knee Push-ups", "Diamond Push-ups", "Decline Push-ups", "Archer Push-ups", "One-arm Push-up", "Chin-ups", "Inverted Rows", "Negative Pull-ups", "Muscle-up",
     "Pike Push-ups", "Band Curls", "Dips", "Bodyweight Squats", "Jump Squats", "Bulgarian Split Squat", "Assisted Pistol Squat", "Pistol Squats", "Leg Raises",
-    "Hanging Knee Raise", "Mountain Climbers", "Burpees"]);
+    "Hanging Knee Raise", "Mountain Climbers", "Burpees", "Jumping Jacks", "High Knees", "Box Jumps", "Bicycle Crunch"]);
   const SKILLS = [
     {id: "push", nodes: [["Knee Push-ups", 20], ["Push-ups", 20], ["Diamond Push-ups", 15], ["Archer Push-ups", 8], ["One-arm Push-up", 3]]},
     {id: "pull", nodes: [["Dead Hang", 60], ["Inverted Rows", 15], ["Negative Pull-ups", 5], ["Pull-ups", 10], ["Muscle-up", 1]]},
@@ -59,7 +59,15 @@
   function periodKey(period, todayKey) { return period === "week" ? keyOf(mondayOf(fromKey(todayKey))) : period === "month" ? todayKey.slice(0, 7) : "all"; }
 
   // S: {profile:{startDate,startWeight}, planHistory, logs, weights}; todayKey: "YYYY-MM-DD" in the user's (Indian) calendar
-  function guildScores(S, period, todayKey) {
+  // exercises a user created himself (S.custom) never count toward guild scores
+  function withoutCustom(S) {
+    const own = new Set((S.custom || []).map(c => c && c.name).filter(Boolean)); if (!own.size) return S;
+    const logs = {};
+    for (const k in S.logs) { const l = S.logs[k]; logs[k] = l && l.type === "workout" ? Object.assign({}, l, {entries: (l.entries || []).filter(e => !own.has(e.ex))}) : l; }
+    return Object.assign({}, S, {logs});
+  }
+  function guildScores(S0, period, todayKey) {
+    const S = withoutCustom(S0);
     const [a, b] = periodRange(S, period, todayKey), t = todayKey, fk = keyOf(a), tk = keyOf(b) < t ? keyOf(b) : t;
     const start = S.profile.startDate, unlocked = skillsUnlocked(S);
     // consistency: planned days trained / planned days so far (max 6 counted per week); today counts only once trained

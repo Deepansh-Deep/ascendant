@@ -222,5 +222,94 @@ ok((await rpc("reset_my_training", {}, p2T)).ok, "user resets own training");
 const after = (await rpc("sync_pull", { p_since: null }, p2T)).data; ok(after.logs.length === 0 && after.state === null, "reset leaves nothing on the server", after);
 ok((await rpc("my_account", {}, p2T)).data.username === P2, "account itself survives a training reset");
 
+// ---------- 11. 3.4: global ranking, guild pages, 30-day stay, owner tools, custom exercises
+console.log("3.4 global ranking");
+{
+  // custom exercises never count for scores
+  const ctx = { console }; vm.createContext(ctx);
+  vm.runInContext(fs.readFileSync(new URL("../../www/js/scoring.js", import.meta.url), "utf8"), ctx);
+  const Sc = ctx.AscendantScoring, day = Sc.indiaToday();
+  const base = { profile: { startDate: day, startWeight: 70 }, planHistory: [{ from: day, plan: [["Chest"], ["Chest"], ["Chest"], ["Chest"], ["Chest"], ["Chest"], ["Chest"]] }], weights: [],
+    logs: { [day]: { type: "workout", entries: [{ ex: "Bench Press", sets: [{ kg: 40, reps: 8 }] }] } } };
+  const plain = Sc.guildScores(base, "week", day);
+  const cheat = JSON.parse(JSON.stringify(base)); cheat.custom = [{ name: "Mega Lift", m: "Chest", t: "weight" }];
+  cheat.logs[day].entries.push({ ex: "Mega Lift", sets: [{ kg: 500, reps: 10 }] });
+  const withC = Sc.guildScores(cheat, "week", day);
+  ok(withC.strength === plain.strength && withC.overall === plain.overall, "a custom 500 kg exercise does not change any score", [plain.strength, withC.strength]);
+  const onlyC = JSON.parse(JSON.stringify(cheat)); onlyC.logs[day].entries = onlyC.logs[day].entries.filter(e => e.ex === "Mega Lift");
+  ok(Sc.guildScores(onlyC, "week", day).consistency === 0, "a day with only custom exercises does not count as trained for the guild");
+}
+{
+const S4 = Date.now().toString(36).slice(-4);
+const mc = (await rpc("owner_create_codes", { p_count: 2, p_note: "3.4", p_grant_days: 30, p_valid_days: 30 }, ownerT)).data;
+const mA = (await signup("ma_" + S4, "masterpass1", "Gym A owner")).data.access_token, mB = (await signup("mb_" + S4, "masterpass1", "Gym B owner")).data.access_token;
+const gA = (await rpc("become_guild_master", { p_code: mc[0], p_gym_name: "Alpha Gym", p_city: "Bokaro" }, mA)).data;
+const gB = (await rpc("become_guild_master", { p_code: mc[1], p_gym_name: "Beta Fitness", p_city: "Haldia" }, mB)).data;
+ok(gA && gB && gA.join_code && gB.join_code, "two gyms registered");
+const mem = [];
+for (let i = 0; i < 12; i++) { const u = `a${i}_${S4}`; const t = (await signup(u, "memberpass1", "A member " + i)).data.access_token; await rpc("request_join", { p_join_code: gA.join_code }, t); mem.push({ u, t, g: "A" }); }
+for (let i = 0; i < 2; i++) { const u = `b${i}_${S4}`; const t = (await signup(u, "memberpass1", "B member " + i)).data.access_token; await rpc("request_join", { p_join_code: gB.join_code }, t); mem.push({ u, t, g: "B" }); }
+for (const r of (await rpc("master_requests", {}, mA)).data) await rpc("master_decide", { p_user: r.user_id, p_approve: true }, mA);
+for (const r of (await rpc("master_requests", {}, mB)).data) await rpc("master_decide", { p_user: r.user_id, p_approve: true }, mB);
+for (const m of mem) m.id = (await rpc("my_account", {}, m.t)).data.id;
+const acA = (await rpc("my_account", {}, mem[0].t)).data.membership;
+ok(acA.status === "approved" && acA.global === null && acA.lock_until, "new member: global not chosen yet, 30-day stay shown", acA);
+const lv = await rpc("leave_guild", {}, mem[0].t); ok(!lv.ok && /leave this guild from/.test(JSON.stringify(lv.data)), "member cannot leave inside 30 days", lv.data);
+// scores: member i of Alpha gets 90 - i*5, Beta members 99 and 50
+const pk = sql(`select public._period_key('week')`);
+mem.forEach((m, i) => { const v = m.g === "A" ? 90 - i * 5 : (m.u.startsWith("b0") ? 99 : 50);
+  sql(`insert into public.user_scores (user_id, period, period_key, consistency, strength, progress, overall) values ('${m.id}', 'week', '${pk}', ${Math.max(v, 0)}, 10, 10, ${Math.max(v, 0)}) on conflict do nothing`); });
+// global choice: Alpha 0..5 shown, 6.. hidden; Beta 0 shown, 1 hidden
+for (const [i, m] of mem.entries()) await rpc("set_global", { p_on: m.g === "A" ? i < 6 : m.u.startsWith("b0") }, m.t);
+ok(!(await rpc("set_global", { p_on: true }, ownerT)).ok, "set_global needs a guild");
+const gl = (await rpc("global_leaderboard", { p_category: "overall", p_period: "week" }, mem[11].t)).data;
+ok(gl.length === 7 && gl[0].username === mem[12].u && gl[0].guild_name === "Beta Fitness" && gl[1].guild_name === "Alpha Gym", "global board: only opted-in members, best first, gym name on every row", gl.map(r => r.username + ":" + r.score));
+ok(!gl.some(r => r.is_me) && !gl.some(r => r.username === mem[13].u), "hidden members never appear globally");
+ok(gl[0].total === 7, "global board knows how many take part", gl[0].total);
+ok(gl.every((r, i) => i === 0 || gl[i - 1].score >= r.score), "global board ordered by score");
+// guild board: top 10 plus own row
+const gb = (await rpc("guild_leaderboard", { p_category: "overall", p_period: "week" }, mem[11].t)).data;
+const meRow = gb.find(r => r.is_me);
+ok(gb.filter(r => r.rank <= 10).length === 10 && meRow && meRow.rank > 10 && gb.length === 11, "guild board: top 10 plus the viewer's own row", gb.map(r => r.rank));
+const obs = (await rpc("guild_leaderboard", { p_category: "overall", p_period: "week", p_guild: gA.guild_id }, ownerT)).data;
+ok(obs.length === 13 && !obs.some(r => r.is_me), "owner observes a whole guild without being on it", obs.length);
+// guild pages
+const pageOther = (await rpc("guild_page", { p_guild: gA.guild_id, p_category: "overall", p_period: "week" }, mem[12].t)).data;
+ok(pageOther.name === "Alpha Gym" && pageOther.members === 13 && pageOther.shown === 6 && pageOther.rows.length === 6, "another gym's page shows only its opted-in members", pageOther);
+const pageMine = (await rpc("guild_page", { p_guild: gA.guild_id, p_category: "overall", p_period: "week" }, mem[8].t)).data;
+ok(pageMine.rows.length === 10, "a member's own gym page shows everyone, top 10", pageMine.rows.length);
+const pageOwner = (await rpc("guild_page", { p_guild: gA.guild_id, p_category: "overall", p_period: "week" }, ownerT)).data;
+ok(pageOwner.rows.length === 10, "owner sees hidden members on gym pages too");
+// owner tools
+const og4 = (await rpc("owner_guilds", {}, ownerT)).data.find(g => g.id === gA.guild_id);
+ok(og4 && og4.join_code === gA.join_code, "owner sees every gym's member join code");
+ok(!(await rpc("owner_guilds", {}, mA)).ok && !(await rpc("owner_regen_join_code", { p_guild: gA.guild_id }, mA)).ok, "guild masters cannot use owner tools");
+const nc = (await rpc("owner_regen_join_code", { p_guild: gA.guild_id }, ownerT)).data;
+ok(nc && nc !== gA.join_code && nc.length === 6, "owner makes a new join code", nc);
+const late = (await signup("late_" + S4, "memberpass1")).data.access_token;
+ok(!(await rpc("request_join", { p_join_code: gA.join_code }, late)).ok && (await rpc("request_join", { p_join_code: nc }, late)).ok, "old code stops working, new code works");
+ok((await rpc("owner_release_member", { p_user: mem[0].id }, ownerT)).ok && (await rpc("my_account", {}, mem[0].t)).data.membership === null, "owner releases a member inside the 30 days");
+ok(!(await rpc("owner_release_member", { p_user: mem[1].id }, mA)).ok, "a guild master cannot use the owner release");
+ok((await rpc("master_remove", { p_user: mem[1].id }, mA)).ok, "guild master can still remove a member inside 30 days");
+const mAid = (await rpc("my_account", {}, mA)).data.id;
+ok(!(await rpc("owner_release_member", { p_user: mAid }, ownerT)).ok, "a master is never released from his own guild");
+// the owner trains at a gym like anyone, but leaves whenever he wants
+ok((await rpc("request_join", { p_join_code: nc }, ownerT)).ok, "owner asks to join a gym");
+const ownId = (await rpc("my_account", {}, ownerT)).data.id; await rpc("master_decide", { p_user: ownId, p_approve: true }, mA);
+const oacc = (await rpc("my_account", {}, ownerT)).data;
+ok(oacc.membership && oacc.membership.status === "approved" && !oacc.membership.lock_until, "owner is a member, with no 30-day stay");
+ok((await rpc("leave_guild", {}, ownerT)).ok, "owner leaves at once");
+// lock ends when the guild is inactive
+await rpc("owner_set_guild", { p_guild: gB.guild_id, p_paid_until: "2020-01-01", p_status: "active" }, ownerT);
+ok((await rpc("leave_guild", {}, mem[13].t)).ok, "the 30-day stay ends if the gym's guild is inactive");
+ok(!(await rpc("global_leaderboard", { p_category: "overall", p_period: "week" }, mem[5].t)).data.some(r => r.guild_name === "Beta Fitness"), "inactive gyms drop off the global board");
+// stats and export
+const st4 = (await rpc("owner_stats", {}, ownerT)).data;
+ok(st4.active_30d >= 1 && st4.signups_7d >= 14 && st4.weekly.length === 8 && st4.members >= 10 && st4.global_on >= 5, "owner stats: active month, new sign-ups, weekly series, members, global", st4);
+const ex4 = await rpc("owner_export_users", {}, ownerT);
+ok(ex4.ok && ex4.data.length >= 15 && ex4.data.some(r => r.guild === "Alpha Gym" && r.global === true), "owner downloads every user with guild and global choice", ex4.data && ex4.data.length);
+ok(!(await rpc("owner_export_users", {}, mem[3].t)).ok, "members cannot export users");
+}
+
 console.log(`\n${pass} passed, ${failN} failed`);
 process.exit(failN ? 1 : 0);

@@ -1,6 +1,6 @@
 "use strict";
 /* ===== CONSTANTS ===== */
-const VERSION = "3.3.6";
+const VERSION = "3.4.0";
 const MUSCLES = ["Chest","Back","Shoulders","Biceps","Triceps","Legs","Abs","Cardio"];
 const OPTIONS = {
   Chest:["Bench Press","Incline Dumbbell Press","Chest Press Machine","Pec Deck Fly","Cable Crossover","Push-ups"],
@@ -8,11 +8,11 @@ const OPTIONS = {
   Shoulders:["Shoulder Press","Lateral Raise","Front Raise","Rear Delt Fly","Face Pull","Shrugs"],
   Biceps:["Barbell Curl","Dumbbell Curl","Hammer Curl","Preacher Curl","Cable Curl"],
   Triceps:["Tricep Pushdown","Rope Pushdown","Overhead Extension","Skull Crusher","Bench Dips"],
-  Legs:["Squat","Leg Press","Leg Extension","Leg Curl","Romanian Deadlift","Calf Raise","Lunges"],
-  Abs:["Crunches","Hanging Leg Raise","Plank","Cable Crunch","Russian Twist","Ab Wheel"],
-  Cardio:["Treadmill","Cycling","Rowing","Stair Climber","Skipping"]
+  Legs:["Squat","Leg Press","Leg Extension","Leg Curl","Romanian Deadlift","Calf Raise","Lunges","Box Jumps"],
+  Abs:["Crunches","Hanging Leg Raise","Plank","Cable Crunch","Russian Twist","Ab Wheel","Bicycle Crunch","Side Plank"],
+  Cardio:["Treadmill","Cycling","Rowing","Stair Climber","Skipping","Jumping Jacks","High Knees","Battle Ropes","Elliptical","Walking"]
 };
-const TIMED = new Set(["Plank","Treadmill","Cycling","Rowing","Stair Climber","Skipping"]);
+const TIMED = new Set(["Plank","Treadmill","Cycling","Rowing","Stair Climber","Skipping","Battle Ropes","Elliptical"]);
 const BODYW = new Set(["Push-ups","Pull-ups","Bench Dips","Hanging Leg Raise","Crunches","Russian Twist","Ab Wheel"]);
 const MUSCLE_OF = {}; for (const m in OPTIONS) OPTIONS[m].forEach(e => MUSCLE_OF[e] = m);
 const RANKS = [
@@ -56,6 +56,8 @@ function migrate(s){
   delete s.look; delete s.owned; delete s.wallet; delete s.ownedV2; delete s.seenEvo;
   s.achieved = s.achieved || {}; s.guild = s.guild || null;
   s.style = s.style || "gym"; s.path = s.path || "solo"; s.pass = !!s.pass;
+  s.custom = Array.isArray(s.custom) ? s.custom.filter(c => c && c.name && MUSCLES.includes(c.m)) : [];
+  if (typeof registerCustom === "function") s.custom.forEach(registerCustom);
   return s;
 }
 let STORE_KEY = KEY;      // per account when signed in (see cloud.js)
@@ -160,17 +162,44 @@ const EXTRA = {
 };
 const HOMEONLY = new Set(Object.values(EXTRA).flat());
 for (const m in EXTRA){ OPTIONS[m].push(...EXTRA[m]); EXTRA[m].forEach(e => MUSCLE_OF[e] = m); }
-const HOLD = new Set(["Dead Hang","Handstand Hold","Wall Sit","Hollow Hold","L-Sit"]);
-const RUN = new Set(["Running"]);
+const HOLD = new Set(["Dead Hang","Handstand Hold","Wall Sit","Hollow Hold","L-Sit","Side Plank"]);
+const RUN = new Set(["Running","Walking"]);
 ["Knee Push-ups","Diamond Push-ups","Decline Push-ups","Archer Push-ups","One-arm Push-up","Chin-ups","Inverted Rows","Negative Pull-ups","Muscle-up",
  "Pike Push-ups","Band Curls","Dips","Bodyweight Squats","Jump Squats","Bulgarian Split Squat","Assisted Pistol Squat","Pistol Squats","Leg Raises",
- "Hanging Knee Raise","Mountain Climbers","Burpees"].forEach(e => BODYW.add(e));
+ "Hanging Knee Raise","Mountain Climbers","Burpees","Jumping Jacks","High Knees","Box Jumps","Bicycle Crunch"].forEach(e => BODYW.add(e));
 const HOME = new Set([...BODYW, ...HOLD, ...RUN, "Plank", "Skipping", "Lunges"]);
 const isWeighted = ex => !(TIMED.has(ex) || BODYW.has(ex) || HOLD.has(ex) || RUN.has(ex));
 function optsFor(m, style){ style = style || (S && S.style) || "both";
-  if (style==="gym") return OPTIONS[m].filter(e => !HOMEONLY.has(e));
-  if (style==="home") return OPTIONS[m].filter(e => HOME.has(e));
-  return OPTIONS[m]; }
+  const base = style==="gym" ? OPTIONS[m].filter(e => !HOMEONLY.has(e)) : style==="home" ? OPTIONS[m].filter(e => HOME.has(e)) : OPTIONS[m];
+  return base.concat(customFor(m)); }
+
+/* ===== CUSTOM EXERCISES =====
+   Users add their own (name, muscle, how it is measured). They give personal XP and history,
+   but never count toward guild or global scores (scoring.js strips them). */
+const BUILTIN = new Set(Object.values(OPTIONS).flat());
+const CUSTOM_TYPES = [["weight","Weight × reps"],["reps","Reps only"],["time","Minutes"],["hold","Seconds (hold)"],["run","Distance (km)"]];
+const isCustom = ex => !!(S && S.custom && S.custom.some(c => c.name === ex));
+const customFor = m => S && S.custom ? S.custom.filter(c => c.m === m && !c.hidden).map(c => c.name) : [];
+function registerCustom(c){
+  MUSCLE_OF[c.name] = c.m;
+  for (const set of [TIMED, BODYW, HOLD, RUN]) set.delete(c.name);
+  ({reps: BODYW, time: TIMED, hold: HOLD, run: RUN})[c.t] && ({reps: BODYW, time: TIMED, hold: HOLD, run: RUN})[c.t].add(c.name);
+}
+function cleanCustomName(n){ return String(n || "").replace(/\s+/g, " ").trim().slice(0, 30); }
+function customNameError(n){
+  if (n.length < 2) return "Give it a name of at least 2 letters";
+  const low = n.toLowerCase();
+  if ([...BUILTIN].some(e => e.toLowerCase() === low)) return `${n} is already in the list`;
+  if ((S.custom || []).some(c => !c.hidden && c.name.toLowerCase() === low)) return `You already added ${n}`;
+  return null;
+}
+function addCustom(name, m, t){
+  S.custom = S.custom || [];
+  const old = S.custom.find(c => c.name.toLowerCase() === name.toLowerCase());
+  const c = old ? Object.assign(old, {name, m, t, hidden: false}) : {name, m, t};
+  if (!old) S.custom.push(c);
+  registerCustom(c); return c;
+}
 function fmtLong(ex,s){ if (RUN.has(ex)) return `${s.km||0} km in ${s.reps} min`; if (HOLD.has(ex)) return `${s.reps} s`; if (TIMED.has(ex)) return `${s.reps} min`;
   if (BODYW.has(ex)) return `${s.reps} reps${+s.kg?` +${s.kg} kg`:""}`; return `${+s.kg||0} kg × ${s.reps}`; }
 

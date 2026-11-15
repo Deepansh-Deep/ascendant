@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Join your gym on Ascendant</title><meta name="theme-color" content="#0E0F12"><meta name="robots" content="noindex">
+<link rel="icon" href="app/icons/icon-192.png"><link rel="stylesheet" href="site.css">
+<style>
+  .joincode{font:700 clamp(40px,12vw,64px)/1 "Sora",system-ui,sans-serif;letter-spacing:.12em;color:#E8C46A;text-align:center;margin:10px 0 6px}
+  .jcard{background:#16181D;border:1px solid #2A2D35;border-radius:18px;padding:22px;margin:18px 0}
+  .jsteps{counter-reset:s;list-style:none;padding:0;margin:0}
+  .jsteps li{counter-increment:s;position:relative;padding:0 0 16px 44px}
+  .jsteps li::before{content:counter(s);position:absolute;left:0;top:-2px;width:30px;height:30px;border-radius:50%;background:#C9A24D;color:#0E0F12;font-weight:700;display:grid;place-items:center}
+  .center{text-align:center}.mt{margin-top:12px}
+</style></head>
+<body>
+<header class="nav"><div class="wrap"><a class="brand" href="./">Ascendant</a><nav><a href="download.html">Download</a></nav></div></header>
+<main class="wrap doc">
+  <h1 id="title">Join your gym on Ascendant</h1>
+  <p class="lead">Log your workouts, rank up, and climb your gym's leaderboard. Free for members.</p>
+  <div class="jcard center">
+    <div class="small mute">Your gym's join code</div>
+    <div class="joincode" id="code">······</div>
+    <button class="btn ghost sm" id="copy" type="button">Copy code</button>
+  </div>
+  <div class="jcard">
+    <ol class="jsteps">
+      <li><b>Download the Android app.</b><div class="mt"><a class="btn" href="https://github.com/Deepansh-Deep/ascendant/releases/latest/download/ascendant.apk">Download Ascendant</a></div></li>
+      <li><b>Open the file and tap Install.</b> If Android asks, allow your browser to install apps. If Play Protect warns, choose "Install anyway".</li>
+      <li><b>Create your account</b> in the app.</li>
+      <li><b>Choose "Join a guild"</b> and enter the code above. Your gym approves you.</li>
+    </ol>
+  </div>
+  <p class="small mute">iPhone or computer? Use the <a href="app/">web app</a>, then follow steps 3 and 4.</p>
+</main>
+<footer><div class="wrap"><span>© 2026 Ascendant</span><nav><a href="terms.html">Terms</a><a href="privacy.html">Privacy</a></nav></div></footer>
+<script>
+  const q = new URLSearchParams(location.search), code = (q.get("c") || "").toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 6), gym = (q.get("g") || "").slice(0, 60);
+  if (code) document.getElementById("code").textContent = code; else document.querySelector(".jcard").style.display = "none";
+  if (gym) { document.getElementById("title").textContent = "Join " + gym + " on Ascendant"; document.title = "Join " + gym + " on Ascendant"; }
+  document.getElementById("copy").onclick = () => navigator.clipboard.writeText(code).then(() => { document.getElementById("copy").textContent = "Copied"; }).catch(() => {});
+</script>
+</body></html>
